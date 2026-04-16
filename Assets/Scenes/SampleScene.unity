@@ -459,6 +459,8 @@ MonoBehaviour:
   _logFrameAdvance: 1
   _logCommandConsumed: 1
   _heroId: hero_1
+  _startAsReplay: 1
+  _replaySpeed: 0.59
 --- !u!4 &910828753
 Transform:
   m_ObjectHideFlags: 0
