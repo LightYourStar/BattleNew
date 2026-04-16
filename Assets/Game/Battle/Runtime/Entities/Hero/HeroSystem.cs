@@ -5,10 +5,15 @@ using UnityEngine;
 namespace Game.Battle.Runtime.Entities.Hero
 {
     /// <summary>
-    /// Handles hero movement/attack cadence in a minimal deterministic way.
+    /// 英雄系统：最小闭环下负责两件事：
+    /// 1) 自动索敌并在冷却结束时发射子弹
+    /// 2) 提供纯函数式的移动应用（由命令消费侧调用）
     /// </summary>
     public sealed class HeroSystem
     {
+        /// <summary>
+        /// 每逻辑帧更新：递减冷却并在条件允许时创建子弹实体。
+        /// </summary>
         public void Tick(BattleContext context, float deltaTime)
         {
             for (int i = 0; i < context.Registry.Heroes.Count; i++)
@@ -37,12 +42,18 @@ namespace Game.Battle.Runtime.Entities.Hero
             }
         }
 
+        /// <summary>
+        /// 将方向向量应用到英雄位置（方向会在方法内归一化）。
+        /// </summary>
         public void ApplyMove(HeroEntity hero, Vector3 direction, float deltaTime)
         {
             Vector3 normalized = direction.sqrMagnitude > 0f ? direction.normalized : Vector3.zero;
             hero.Position += normalized * hero.MoveSpeed * deltaTime;
         }
 
+        /// <summary>
+        /// 在攻击范围内选择距离最近的存活敌人作为目标。
+        /// </summary>
         private static string? FindNearestTargetId(BattleContext context, HeroEntity hero)
         {
             float bestDistance = float.MaxValue;

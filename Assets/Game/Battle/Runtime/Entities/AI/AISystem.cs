@@ -5,10 +5,16 @@ using UnityEngine;
 namespace Game.Battle.Runtime.Entities.AI
 {
     /// <summary>
-    /// Runs minimal AI pursue behavior for the first battle slice.
+    /// AI 系统：最小闭环版本包含“状态判定 + 追击移动”。
+    /// <para>
+    /// 说明：
+    /// - 当前默认只追逐 <c>Heroes[0]</c>，用于单英雄验证；多英雄时应引入锁敌服务或黑板数据。
+    /// - 状态切换会触发 <see cref="Game.Battle.Runtime.Services.DebugTrace.IDebugTraceService.TraceStateChange"/> 以便观测。
+    /// </para>
     /// </summary>
     public sealed class AISystem
     {
+        /// <summary>每逻辑帧更新：先更新状态，再执行 Pursue 下的位移。</summary>
         public void Tick(BattleContext context, float deltaTime)
         {
             for (int i = 0; i < context.Registry.Enemies.Count; i++)
@@ -42,6 +48,9 @@ namespace Game.Battle.Runtime.Entities.AI
             }
         }
 
+        /// <summary>
+        /// 计算下一状态：死亡优先；无英雄则 Idle；进入视野则 Pursue。
+        /// </summary>
         private static AIState ResolveState(BattleContext context, AIEntity enemy)
         {
             if (!enemy.IsAlive)

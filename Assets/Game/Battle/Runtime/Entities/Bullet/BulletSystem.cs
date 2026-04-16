@@ -5,10 +5,17 @@ using UnityEngine;
 namespace Game.Battle.Runtime.Entities.Bullet
 {
     /// <summary>
-    /// Handles bullet flight, hit detection and minimal damage application.
+    /// 子弹系统：更新子弹位置、处理命中、触发最小伤害与回收。
+    /// <para>
+    /// 注意：这是教学/验证向的最小实现，不是最终性能形态。
+    /// 后续切片会拆出 HitResolver、伤害请求队列、碰撞体配置等。
+    /// </para>
     /// </summary>
     public sealed class BulletSystem
     {
+        /// <summary>
+        /// 逆序遍历便于安全 RemoveAt；每颗子弹在本帧最多结算一次命中。
+        /// </summary>
         public void Tick(BattleContext context, float deltaTime)
         {
             for (int i = context.Registry.Bullets.Count - 1; i >= 0; i--)
@@ -47,6 +54,7 @@ namespace Game.Battle.Runtime.Entities.Bullet
             }
         }
 
+        /// <summary>在敌人列表中按 Id 查找目标实体。</summary>
         private static AIEntity? FindTarget(BattleContext context, string targetId)
         {
             for (int i = 0; i < context.Registry.Enemies.Count; i++)
