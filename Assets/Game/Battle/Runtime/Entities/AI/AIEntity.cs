@@ -13,8 +13,11 @@ namespace Game.Battle.Runtime.Entities.AI
         /// <summary>已看到目标并向其移动。</summary>
         Pursue = 1,
 
+        /// <summary>到达攻击距离并正在攻击。</summary>
+        Attack = 2,
+
         /// <summary>已死亡（用于显式终止追击等逻辑）。</summary>
-        Dead = 2,
+        Dead = 3,
     }
 
     /// <summary>
@@ -39,6 +42,18 @@ namespace Game.Battle.Runtime.Entities.AI
 
         /// <summary>视野距离：进入该范围会从 Idle 切换到 Pursue。</summary>
         public float SightRange { get; set; } = 8f;
+
+        /// <summary>攻击距离。</summary>
+        public float AttackRange { get; set; } = 1.5f;
+
+        /// <summary>攻击冷却（秒）。</summary>
+        public float AttackCooldown { get; set; } = 1.0f;
+
+        /// <summary>攻击冷却剩余。</summary>
+        public float AttackCooldownRemaining { get; set; }
+
+        /// <summary>单次攻击伤害。</summary>
+        public float AttackDamage { get; set; } = 5f;
 
         /// <summary>当前 AI 状态。</summary>
         public AIState State { get; private set; } = AIState.Idle;

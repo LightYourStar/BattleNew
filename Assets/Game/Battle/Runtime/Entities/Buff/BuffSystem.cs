@@ -1,19 +1,49 @@
 using Game.Battle.Runtime.Core;
+using Game.Battle.Runtime.Entities.Element;
 
 namespace Game.Battle.Runtime.Entities.Buff
 {
     /// <summary>
-    /// Buff 系统占位：保证 BattleWorld 更新顺序稳定，但不在切片 0/1 引入复杂 Buff 联动。
-    /// <para>
-    /// 迁移切片对应：切片 7（Buff 系统）。
-    /// </para>
+    /// Buff 系统：持有 BuffRegistry，在每逻辑帧推进所有活跃 Buff，
+    /// 同时为 DamageService 提供伤害修正钩子。
     /// </summary>
     public sealed class BuffSystem
     {
-        /// <summary>每逻辑帧更新：当前无操作。</summary>
+        public BuffRegistry Registry { get; } = new();
+
+        /// <summary>每逻辑帧更新所有活跃 Buff（到期自动移除）。</summary>
         public void Tick(BattleContext context, float deltaTime)
         {
-            // Reserved for slice 7 implementation.
+            Registry.Tick(context, deltaTime);
+        }
+
+        /// <summary>添加 Buff。</summary>
+        public void AddBuff(BattleContext context, IBuff buff)
+        {
+            Registry.Add(context, buff);
+        }
+
+        /// <summary>手动移除 Buff。</summary>
+        public void RemoveBuff(BattleContext context, IBuff buff)
+        {
+            Registry.Remove(context, buff);
+        }
+
+        /// <summary>
+        /// 遍历所有与本次伤害相关的 Buff（攻击方或受击方），调用其伤害修正钩子。
+        /// DamageService 在计算最终伤害前调用此方法。
+        /// </summary>
+        public void ModifyDamage(DamageContext damageCtx)
+        {
+            var buffs = Registry.ActiveBuffs;
+            for (int i = 0; i < buffs.Count; i++)
+            {
+                IBuff buff = buffs[i];
+                if (buff.OwnerId == damageCtx.AttackerId || buff.OwnerId == damageCtx.TargetId)
+                {
+                    buff.ModifyDamage(damageCtx);
+                }
+            }
         }
     }
 }

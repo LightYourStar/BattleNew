@@ -3,7 +3,8 @@ using UnityEngine;
 namespace Game.Battle.Runtime.Entities.Bullet
 {
     /// <summary>
-    /// 子弹实体：最小闭环下用“追踪目标 + 距离命中”模拟飞行与命中。
+    /// 子弹实体：持有飞行策略 <see cref="IBulletMovement"/>，
+    /// 由 BulletFactory 在创建时注入，BulletSystem 每帧调用策略推进位置。
     /// </summary>
     public sealed class BulletEntity
     {
@@ -31,12 +32,20 @@ namespace Game.Battle.Runtime.Entities.Bullet
         /// <summary>是否仍活跃（命中/目标失效后会置 false 并回收）。</summary>
         public bool IsActive { get; set; } = true;
 
-        public BulletEntity(string id, string ownerId, string targetId, Vector3 spawnPosition)
+        /// <summary>
+        /// 飞行策略（Strategy 模式）：不同子弹类型注入不同实现，
+        /// 例如 <see cref="TrackingMovement"/>、<see cref="LinearMovement"/>、<see cref="ParabolicMovement"/>。
+        /// </summary>
+        public IBulletMovement Movement { get; }
+
+        public BulletEntity(string id, string ownerId, string targetId, Vector3 spawnPosition,
+            IBulletMovement movement)
         {
             Id = id;
             OwnerId = ownerId;
             TargetId = targetId;
             Position = spawnPosition;
+            Movement = movement;
         }
     }
 }

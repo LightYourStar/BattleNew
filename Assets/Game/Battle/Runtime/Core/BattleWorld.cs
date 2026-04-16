@@ -1,6 +1,12 @@
+using System.Collections.Generic;
 using Game.Battle.Runtime.Commands;
 using Game.Battle.Runtime.Commands.Commands;
+using Game.Battle.Runtime.Entities;
+using Game.Battle.Runtime.Entities.AI;
+using Game.Battle.Runtime.Entities.Bullet;
+using Game.Battle.Runtime.Entities.Element;
 using Game.Battle.Runtime.Entities.Hero;
+using Game.Battle.Runtime.Entities.Wave;
 using Game.Battle.Runtime.Rules.PlayModes;
 using Game.Battle.Runtime.Rules.StageHandlers;
 using Game.Battle.Runtime.Rules.VictoryRules;
@@ -13,24 +19,17 @@ using Game.Battle.Runtime.Services.Replay;
 namespace Game.Battle.Runtime.Core
 {
     /// <summary>
-    /// 战斗世界：负责装配 <see cref="BattleContext"/>，并驱动固定帧循环下的系统更新顺序。
+    /// 战斗世界：负责装配 BattleContext 并驱动固定帧循环下的系统更新顺序。
     /// <para>
-    /// 边界原则：
-    /// - BattleWorld 是“编排器”，不要把具体玩法规则写进来（规则在 Rules 层）。
-    /// - 高频逻辑在固定 Tick 内完成；渲染表现应监听数据变化或由 Presentation 同步。
+    /// BattleWorld 是纯粹的"编排者"，不包含任何业务逻辑：
+    /// 每帧只负责按顺序调用各系统的 Tick，具体逻辑由各系统/服务自行处理。
     /// </para>
     /// </summary>
     public sealed class BattleWorld
     {
-        /// <summary>对外暴露的运行时上下文（系统、服务、实体表）。</summary>
         public BattleContext Context { get; }
-
-        /// <summary>固定步长循环（与 Unity Update 解耦）。</summary>
         public FrameLoop FrameLoop { get; }
 
-        /// <summary>
-        /// 创建战斗世界并装配默认依赖（可用参数替换为自定义实现以便测试）。
-        /// </summary>
         public BattleWorld(
             float fixedStep = 1f / 30f,
             IReplayService? replayService = null,
@@ -51,66 +50,71 @@ namespace Game.Battle.Runtime.Core
             FrameLoop.OnFixedTick += Tick;
         }
 
-        /// <summary>开始战斗：触发玩法开始钩子并启动固定循环。</summary>
         public void Start()
         {
             Context.PlayMode.OnBattleStart(Context);
             FrameLoop.Start();
         }
 
-        /// <summary>暂停战斗逻辑（渲染可不暂停）。</summary>
-        public void Pause()
-        {
-            FrameLoop.Pause();
-        }
+        public void Pause() => FrameLoop.Pause();
+        public void Resume() => FrameLoop.Resume();
 
-        /// <summary>恢复战斗逻辑。</summary>
-        public void Resume()
-        {
-            FrameLoop.Resume();
-        }
-
-        /// <summary>
-        /// 结束战斗：停止循环并触发玩法结束钩子。
-        /// <para>
-        /// 注意：当前实现会停止 FrameLoop，但不会自动解除 OnFixedTick 订阅；
-        /// 若未来需要频繁创建/销毁 BattleWorld，可补充 IDisposable 来解绑事件，避免重复订阅。
-        /// </para>
-        /// </summary>
         public void Stop()
         {
             FrameLoop.Stop();
             Context.PlayMode.OnBattleEnd(Context, Context.VictoryRule.IsVictory);
         }
 
-        /// <summary>由外部驱动（通常是 MonoBehaviour.Update）调用，用渲染 deltaTime 推进逻辑帧。</summary>
         public void Update(float deltaTime)
         {
             FrameLoop.Tick(deltaTime);
         }
 
         /// <summary>
-        /// 单个固定逻辑帧推进：命令 -> 各系统 -> 关卡 -> 胜负。
+        /// 固定逻辑帧推进，严格按文档约定顺序：
+        /// 命令消费 → Hero → AI → Bullet → Buff → Trait → Wave → Stage → Victory
         /// </summary>
         private void Tick(float deltaTime)
         {
             int frame = Context.Time.Frame;
             Context.DebugTraceService.TraceFrameAdvance(frame);
 
+            // ① 命令收集与消费
             Context.OrderBus.PullRemoteCommands(frame);
-            var frameCommands = Context.OrderBus.DequeueFrameCommands(frame);
+            IReadOnlyList<IFrameCommand> frameCommands = Context.OrderBus.DequeueFrameCommands(frame);
             Context.ReplayService.RecordFrameCommands(frame, frameCommands);
             ConsumeCommands(frameCommands, deltaTime);
 
-            // Fixed order contract from migration docs:
-            // 1) Commands, then 2-9 system/rule layers.
-            Context.HeroSystem.Tick(Context, deltaTime);
+            // ② Hero：状态更新 + 武器发射
+            for (int i = 0; i < Context.Registry.Heroes.Count; i++)
+            {
+                HeroEntity hero = Context.Registry.Heroes[i];
+                string? targetId = Context.HeroTargetingService.FindNearestAliveEnemy(Context, hero);
+                hero.LockedTargetId = targetId;
+                Context.HeroStateController.UpdateState(Context, hero, targetId != null, hero.IsMovingThisFrame);
+                Context.WeaponFireService.TryFire(Context, hero, targetId, deltaTime);
+                hero.IsMovingThisFrame = false;
+            }
+
+            // ③ AI：状态 + 追击 + 攻击
             Context.AISystem.Tick(Context, deltaTime);
+
+            // ④ Bullet：委托给 BulletSystem（飞行策略由各子弹自己持有，命中由 HitResolver 处理）
             Context.BulletSystem.Tick(Context, deltaTime);
+
+            // ⑤ Buff
             Context.BuffSystem.Tick(Context, deltaTime);
+
+            // ⑥ Trait（预留每帧效果）
             Context.TraitSystem.Tick(Context, deltaTime);
+
+            // ⑦ Wave
             Context.WaveSystem.Tick(Context, deltaTime);
+
+            // ⑧ Stage
             Context.StageHandler.Tick(Context, deltaTime);
+
+            // ⑨ Victory
             Context.VictoryRule.Tick(Context, deltaTime);
 
             Context.Time.AdvanceOneFrame();
@@ -121,8 +125,7 @@ namespace Game.Battle.Runtime.Core
             }
         }
 
-        /// <summary>消费本帧命令：当前实现仅处理移动，其余命令类型在后续切片接入。</summary>
-        private void ConsumeCommands(System.Collections.Generic.IReadOnlyList<IFrameCommand> frameCommands, float deltaTime)
+        private void ConsumeCommands(IReadOnlyList<IFrameCommand> frameCommands, float deltaTime)
         {
             for (int i = 0; i < frameCommands.Count; i++)
             {
@@ -132,31 +135,44 @@ namespace Game.Battle.Runtime.Core
                     case MoveCommand moveCommand:
                         ApplyMove(moveCommand, deltaTime);
                         break;
-                    case UseSkillCommand:
-                    case SelectTraitCommand:
-                        // Reserved for later slices.
+                    case UseSkillCommand skillCommand:
+                        ApplySkill(skillCommand);
+                        break;
+                    case SelectTraitCommand traitCommand:
+                        ApplySelectTrait(traitCommand);
                         break;
                 }
             }
         }
 
-        /// <summary>将移动命令应用到指定英雄实体。</summary>
-        private void ApplyMove(MoveCommand moveCommand, float deltaTime)
+        private void ApplyMove(MoveCommand cmd, float deltaTime)
         {
             for (int i = 0; i < Context.Registry.Heroes.Count; i++)
             {
                 HeroEntity hero = Context.Registry.Heroes[i];
-                if (hero.Id != moveCommand.HeroId)
+                if (hero.Id != cmd.HeroId)
                 {
                     continue;
                 }
 
-                Context.HeroSystem.ApplyMove(hero, moveCommand.Direction, deltaTime);
+                Context.HeroSystem.ApplyMove(hero, cmd.Direction, deltaTime);
+                hero.IsMovingThisFrame = true;
                 return;
             }
         }
 
-        /// <summary>装配默认 Context：创建依赖与系统实例。</summary>
+        private void ApplySkill(UseSkillCommand cmd)
+        {
+            Context.DebugTraceService.TraceStateChange(cmd.CasterId, "Idle", $"Skill:{cmd.SkillId}");
+            // TODO: 后续接入技能系统
+        }
+
+        private void ApplySelectTrait(SelectTraitCommand cmd)
+        {
+            Context.DebugTraceService.TraceStateChange(cmd.HeroId, "NoTrait", $"Trait:{cmd.TraitId}");
+            // TODO: 后续接入词条选择系统
+        }
+
         private static BattleContext BuildContext(
             float fixedStep,
             IReplayService replayService,
@@ -167,7 +183,7 @@ namespace Game.Battle.Runtime.Core
         {
             BattleContext context = new(
                 time: new BattleTime(fixedStep),
-                registry: new Entities.EntityRegistry(),
+                registry: new EntityRegistry(),
                 replayService: replayService,
                 netAdapter: netAdapter,
                 eventBus: eventBus,
@@ -176,14 +192,33 @@ namespace Game.Battle.Runtime.Core
 
             FrameCommandBuffer commandBuffer = new();
             context.OrderBus = new OrderBus(commandBuffer, netAdapter, debugTraceService);
+
+            // 实体系统
             context.HeroSystem = new Entities.Hero.HeroSystem();
+            context.HeroTargetingService = new HeroTargetingService();
+            context.HeroStateController = new HeroStateController();
             context.AISystem = new Entities.AI.AISystem();
             context.BulletSystem = new Entities.Bullet.BulletSystem();
             context.BuffSystem = new Entities.Buff.BuffSystem();
             context.TraitSystem = new Entities.Trait.TraitSystem();
             context.WaveSystem = new Entities.Wave.WaveSystem();
+            context.SpawnSystem = new SpawnSystem();
+
+            // 子弹链
+            context.BulletFactory = new BulletFactory();
+            context.WeaponFireService = new WeaponFireService(context.BulletFactory);
+            context.HitResolver = new HitResolver();
+
+            // 伤害/死亡
+            context.DamageService = new DamageService();
+            context.DeathService = new DeathService();
+            context.HitReactionService = new HitReactionService();
+
+            // 规则
             context.PlayMode = new DefaultPlayMode();
             context.StageHandler = new DefaultStageHandler();
+            // context.StageHandler = new MultiWaveStageHandler(10);
+
             context.VictoryRule = new KillAllVictoryRule();
 
             return context;

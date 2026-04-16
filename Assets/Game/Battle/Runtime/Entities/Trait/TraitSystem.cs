@@ -1,19 +1,46 @@
 using Game.Battle.Runtime.Core;
+using Game.Battle.Runtime.Entities.Element;
 
 namespace Game.Battle.Runtime.Entities.Trait
 {
     /// <summary>
-    /// 词条系统占位：保证 BattleWorld 更新顺序稳定，但不在切片 0/1 引入复杂词条联动。
-    /// <para>
-    /// 迁移切片对应：切片 8（词条系统）。
-    /// </para>
+    /// 词条系统：持有 TraitRegistry，提供装备/卸载入口，
+    /// 同时为 DamageService 提供伤害修正钩子。
     /// </summary>
     public sealed class TraitSystem
     {
-        /// <summary>每逻辑帧更新：当前无操作。</summary>
+        public TraitRegistry Registry { get; } = new();
+
+        /// <summary>每逻辑帧更新（当前为占位，后续可用于周期性词条效果）。</summary>
         public void Tick(BattleContext context, float deltaTime)
         {
-            // Reserved for slice 8 implementation.
+        }
+
+        public void EquipTrait(BattleContext context, ITrait trait)
+        {
+            Registry.Equip(context, trait);
+        }
+
+        public void UnequipTrait(BattleContext context, ITrait trait)
+        {
+            Registry.Unequip(context, trait);
+        }
+
+        /// <summary>
+        /// 遍历所有与本次伤害相关的词条（攻击方或受击方），调用其伤害修正钩子。
+        /// DamageService 在计算最终伤害前调用此方法。
+        /// </summary>
+        public void ModifyDamage(DamageContext damageCtx)
+        {
+            var traits = Registry.ActiveTraits;
+            for (int i = 0; i < traits.Count; i++)
+            {
+                ITrait trait = traits[i];
+                if (trait.OwnerId == damageCtx.AttackerId || trait.OwnerId == damageCtx.TargetId)
+                {
+                    trait.ModifyDamage(damageCtx);
+                }
+            }
         }
     }
 }

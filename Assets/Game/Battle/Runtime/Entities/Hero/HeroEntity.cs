@@ -17,6 +17,12 @@ namespace Game.Battle.Runtime.Entities.Hero
         /// <summary>逻辑位置（世界空间）。</summary>
         public Vector3 Position { get; set; }
 
+        /// <summary>最大生命值。</summary>
+        public float MaxHp { get; set; } = 100f;
+
+        /// <summary>当前生命值。</summary>
+        public float CurrentHp { get; set; } = 100f;
+
         /// <summary>移动速度（单位：世界坐标/秒）。</summary>
         public float MoveSpeed { get; set; } = 5f;
 
@@ -28,6 +34,15 @@ namespace Game.Battle.Runtime.Entities.Hero
 
         /// <summary>攻击冷却剩余（秒）。</summary>
         public float AttackCooldownRemaining { get; set; }
+
+        /// <summary>当前英雄状态（由 HeroStateController 维护）。</summary>
+        public HeroState CurrentState { get; set; } = HeroState.Idle;
+
+        /// <summary>当前锁定目标 Id（null 表示无目标）。</summary>
+        public string? LockedTargetId { get; set; }
+
+        /// <summary>本帧是否收到了移动命令。</summary>
+        public bool IsMovingThisFrame { get; set; }
 
         public HeroEntity(string id, Vector3 spawnPosition)
         {
