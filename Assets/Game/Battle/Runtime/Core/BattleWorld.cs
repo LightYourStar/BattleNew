@@ -85,27 +85,46 @@ namespace Game.Battle.Runtime.Core
             Context.ReplayService.RecordFrameCommands(frame, frameCommands);
             ConsumeCommands(frameCommands, deltaTime);
 
-            // ② Hero：状态更新 + 武器发射
+            // ② Hero：锁敌 → 朝向 → 状态 → 武器发射 → 帧标记清零
             for (int i = 0; i < Context.Registry.Heroes.Count; i++)
             {
                 HeroEntity hero = Context.Registry.Heroes[i];
+
+                // 锁敌（HeroTargetingService）
                 string? targetId = Context.HeroTargetingService.FindNearestAliveEnemy(Context, hero);
                 hero.LockedTargetId = targetId;
+
+                // 朝向（HeroMovementController）：有目标且未在移动时，面朝目标
+                if (!hero.IsMovingThisFrame && targetId != null)
+                {
+                    var target = Context.Registry.FindAI(targetId);
+                    if (target != null)
+                    {
+                        Context.HeroMovementController.ApplyFaceTarget(hero, target.Position);
+                    }
+                }
+
+                // 状态切换（HeroStateController）
                 Context.HeroStateController.UpdateState(Context, hero, targetId != null, hero.IsMovingThisFrame);
+
+                // 武器发射（WeaponFireService）
                 Context.WeaponFireService.TryFire(Context, hero, targetId, deltaTime);
+
+                // 清帧标记
                 hero.IsMovingThisFrame = false;
+                hero.MoveDirectionThisFrame = UnityEngine.Vector3.zero;
             }
 
             // ③ AI：状态 + 追击 + 攻击
             Context.AISystem.Tick(Context, deltaTime);
 
-            // ④ Bullet：委托给 BulletSystem（飞行策略由各子弹自己持有，命中由 HitResolver 处理）
+            // ④ Bullet：飞行策略 + 命中判定
             Context.BulletSystem.Tick(Context, deltaTime);
 
             // ⑤ Buff
             Context.BuffSystem.Tick(Context, deltaTime);
 
-            // ⑥ Trait（预留每帧效果）
+            // ⑥ Trait（每帧效果）
             Context.TraitSystem.Tick(Context, deltaTime);
 
             // ⑦ Wave
@@ -145,20 +164,21 @@ namespace Game.Battle.Runtime.Core
             }
         }
 
+        /// <summary>
+        /// 消费 MoveCommand：委托 HeroMovementController 推进位置 + 更新朝向，
+        /// 并在英雄实体上设置本帧移动标记（供后续状态机判断）。
+        /// </summary>
         private void ApplyMove(MoveCommand cmd, float deltaTime)
         {
-            for (int i = 0; i < Context.Registry.Heroes.Count; i++)
+            HeroEntity? hero = Context.Registry.FindHero(cmd.HeroId);
+            if (hero == null)
             {
-                HeroEntity hero = Context.Registry.Heroes[i];
-                if (hero.Id != cmd.HeroId)
-                {
-                    continue;
-                }
-
-                Context.HeroSystem.ApplyMove(hero, cmd.Direction, deltaTime);
-                hero.IsMovingThisFrame = true;
                 return;
             }
+
+            Context.HeroMovementController.ApplyMove(hero, cmd.Direction, deltaTime);
+            hero.IsMovingThisFrame = true;
+            hero.MoveDirectionThisFrame = cmd.Direction;
         }
 
         private void ApplySkill(UseSkillCommand cmd)
@@ -193,10 +213,12 @@ namespace Game.Battle.Runtime.Core
             FrameCommandBuffer commandBuffer = new();
             context.OrderBus = new OrderBus(commandBuffer, netAdapter, debugTraceService);
 
-            // 实体系统
+            // 实体系统（英雄四路分离）
             context.HeroSystem = new Entities.Hero.HeroSystem();
+            context.HeroMovementController = new HeroMovementController();
             context.HeroTargetingService = new HeroTargetingService();
             context.HeroStateController = new HeroStateController();
+
             context.AISystem = new Entities.AI.AISystem();
             context.BulletSystem = new Entities.Bullet.BulletSystem();
             context.BuffSystem = new Entities.Buff.BuffSystem();
@@ -217,8 +239,6 @@ namespace Game.Battle.Runtime.Core
             // 规则
             context.PlayMode = new DefaultPlayMode();
             context.StageHandler = new DefaultStageHandler();
-            // context.StageHandler = new MultiWaveStageHandler(10);
-
             context.VictoryRule = new KillAllVictoryRule();
 
             return context;

@@ -37,6 +37,7 @@ namespace Game.Battle.Runtime.Core
 
         // ─── 实体系统 ───
         public HeroSystem HeroSystem { get; internal set; } = default!;
+        public HeroMovementController HeroMovementController { get; internal set; } = default!;
         public HeroTargetingService HeroTargetingService { get; internal set; } = default!;
         public HeroStateController HeroStateController { get; internal set; } = default!;
         public AISystem AISystem { get; internal set; } = default!;
