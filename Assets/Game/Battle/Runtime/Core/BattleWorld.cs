@@ -85,6 +85,9 @@ namespace Game.Battle.Runtime.Core
             Context.ReplayService.RecordFrameCommands(frame, frameCommands);
             ConsumeCommands(frameCommands, deltaTime);
 
+            // ① ½ 受击反应 Tick（击退位移 + 计时器衰减；放在行为系统前，避免当帧重复叠加）
+            Context.HitReactionService.Tick(Context, deltaTime);
+
             // ② Hero：锁敌 → 朝向 → 状态 → 武器发射 → 帧标记清零
             for (int i = 0; i < Context.Registry.Heroes.Count; i++)
             {
@@ -172,6 +175,12 @@ namespace Game.Battle.Runtime.Core
         {
             HeroEntity? hero = Context.Registry.FindHero(cmd.HeroId);
             if (hero == null)
+            {
+                return;
+            }
+
+            // 硬直期间忽略移动命令
+            if (hero.StunRemaining > 0f)
             {
                 return;
             }

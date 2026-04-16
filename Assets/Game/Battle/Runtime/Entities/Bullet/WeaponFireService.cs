@@ -17,10 +17,16 @@ namespace Game.Battle.Runtime.Entities.Bullet
         }
 
         /// <summary>
-        /// 尝试为英雄发射子弹：冷却判断 + 目标选择 + 子弹生成。
+        /// 尝试为英雄发射子弹：硬直检查 + 冷却判断 + 目标选择 + 子弹生成。
         /// </summary>
         public void TryFire(BattleContext context, HeroEntity hero, string? targetId, float deltaTime)
         {
+            // 硬直期间不能攻击
+            if (hero.StunRemaining > 0f)
+            {
+                return;
+            }
+
             hero.AttackCooldownRemaining -= deltaTime;
             if (hero.AttackCooldownRemaining > 0f || string.IsNullOrEmpty(targetId))
             {
