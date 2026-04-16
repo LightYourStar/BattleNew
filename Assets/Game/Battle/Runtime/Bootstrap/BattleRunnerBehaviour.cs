@@ -26,6 +26,8 @@ namespace Game.Battle.Runtime.Bootstrap
         private readonly BattleBootstrap _bootstrap = new();
         private int _lastInputCommandFrame = -1;
 
+        public BattleWorld? World => _bootstrap.World;
+
         private void Awake()
         {
             if (_autoStartOnAwake)

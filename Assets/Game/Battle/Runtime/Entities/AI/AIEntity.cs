@@ -2,6 +2,13 @@ using UnityEngine;
 
 namespace Game.Battle.Runtime.Entities.AI
 {
+    public enum AIState
+    {
+        Idle = 0,
+        Pursue = 1,
+        Dead = 2,
+    }
+
     public sealed class AIEntity
     {
         public string Id { get; }
@@ -13,6 +20,10 @@ namespace Game.Battle.Runtime.Entities.AI
         public float CurrentHp { get; private set; }
 
         public float MoveSpeed { get; set; } = 2f;
+
+        public float SightRange { get; set; } = 8f;
+
+        public AIState State { get; private set; } = AIState.Idle;
 
         public bool IsAlive => CurrentHp > 0f;
 
@@ -31,6 +42,11 @@ namespace Game.Battle.Runtime.Entities.AI
             {
                 CurrentHp = 0f;
             }
+        }
+
+        public void SetState(AIState newState)
+        {
+            State = newState;
         }
     }
 }
