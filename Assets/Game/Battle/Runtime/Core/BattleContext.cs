@@ -47,6 +47,9 @@ namespace Game.Battle.Runtime.Core
         public WaveSystem WaveSystem { get; internal set; } = default!;
         public SpawnSystem SpawnSystem { get; internal set; } = default!;
 
+        // ─── 词条工厂 ───
+        public TraitFactory TraitFactory { get; internal set; } = default!;
+
         // ─── 子弹链 ───
         public BulletFactory BulletFactory { get; internal set; } = default!;
         public WeaponFireService WeaponFireService { get; internal set; } = default!;

@@ -66,16 +66,24 @@ namespace Game.Battle.Runtime.Entities.Element
             for (int i = 0; i < context.Registry.Heroes.Count; i++)
             {
                 HeroEntity hero = context.Registry.Heroes[i];
-                if (hero.Id == targetId)
+                if (hero.Id != targetId || !hero.IsAlive)
                 {
-                    hero.CurrentHp -= damageCtx.FinalDamage;
-                    if (hero.CurrentHp < 0f)
-                    {
-                        hero.CurrentHp = 0f;
-                    }
-                    context.DebugTraceService.TraceDamage(attackerId, targetId, damageCtx.FinalDamage);
-                    return;
+                    continue;
                 }
+
+                hero.CurrentHp -= damageCtx.FinalDamage;
+                if (hero.CurrentHp < 0f)
+                {
+                    hero.CurrentHp = 0f;
+                }
+                context.DebugTraceService.TraceDamage(attackerId, targetId, damageCtx.FinalDamage);
+
+                // 与敌人死亡逻辑对称：HP 归零时通过统一死亡出口广播
+                if (!hero.IsAlive)
+                {
+                    context.DeathService.OnEntityDeath(context, hero.Id);
+                }
+                return;
             }
         }
     }

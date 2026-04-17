@@ -1,3 +1,4 @@
+using System;
 using Game.Battle.Runtime.Core;
 using Game.Battle.Runtime.Entities.Hero;
 using Game.Battle.Runtime.Services.Replay;
@@ -32,9 +33,16 @@ namespace Game.Battle.Runtime.Bootstrap
         /// <summary>
         /// 进入战斗：创建（或注入）BattleWorld，播种最小实体，并启动固定帧循环。
         /// </summary>
-        public void EnterBattle(BattleWorld? world = null)
+        /// <param name="world">可选：外部注入的 BattleWorld（默认创建新实例）。</param>
+        /// <param name="setupContext">
+        /// 可选：Context 构建完成后、战斗启动前的钩子回调。
+        /// 用于在 Hotfix/外部层注册词条工厂、Buff 工厂等，保持 Runtime 层对具体实现的无感知。
+        /// 示例：<c>ctx => ctx.TraitFactory.Register("damage_boost", id => new DamageBoostTrait(id))</c>
+        /// </param>
+        public void EnterBattle(BattleWorld? world = null, Action<BattleContext>? setupContext = null)
         {
             World = world ?? new BattleWorld();
+            setupContext?.Invoke(World.Context);
             SeedMinimalLoop(World.Context);
             World.Start();
         }

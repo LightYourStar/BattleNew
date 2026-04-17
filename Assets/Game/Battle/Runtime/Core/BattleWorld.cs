@@ -6,6 +6,7 @@ using Game.Battle.Runtime.Entities.AI;
 using Game.Battle.Runtime.Entities.Bullet;
 using Game.Battle.Runtime.Entities.Element;
 using Game.Battle.Runtime.Entities.Hero;
+using Game.Battle.Runtime.Entities.Trait;
 using Game.Battle.Runtime.Entities.Wave;
 using Game.Battle.Runtime.Rules.PlayModes;
 using Game.Battle.Runtime.Rules.StageHandlers;
@@ -198,8 +199,15 @@ namespace Game.Battle.Runtime.Core
 
         private void ApplySelectTrait(SelectTraitCommand cmd)
         {
+            if (!Context.TraitFactory.TryCreate(cmd.TraitId, cmd.HeroId, out ITrait? trait) || trait == null)
+            {
+                // 工厂中未注册该词条 Id：在 Bootstrap 或 Hotfix 初始化时调用 TraitFactory.Register 注册
+                Context.DebugTraceService.TraceStateChange(cmd.HeroId, "NoTrait", $"TraitNotFound:{cmd.TraitId}");
+                return;
+            }
+
+            Context.TraitSystem.EquipTrait(Context, trait);
             Context.DebugTraceService.TraceStateChange(cmd.HeroId, "NoTrait", $"Trait:{cmd.TraitId}");
-            // TODO: 后续接入词条选择系统
         }
 
         private static BattleContext BuildContext(
@@ -232,6 +240,7 @@ namespace Game.Battle.Runtime.Core
             context.BulletSystem = new Entities.Bullet.BulletSystem();
             context.BuffSystem = new Entities.Buff.BuffSystem();
             context.TraitSystem = new Entities.Trait.TraitSystem();
+            context.TraitFactory = new Entities.Trait.TraitFactory();
             context.WaveSystem = new Entities.Wave.WaveSystem();
             context.SpawnSystem = new SpawnSystem();
 

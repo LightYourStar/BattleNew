@@ -3,10 +3,9 @@ using Game.Battle.Runtime.Core;
 namespace Game.Battle.Runtime.Rules.VictoryRules
 {
     /// <summary>
-    /// 最小胜利规则：当关卡流程判定清场后，立即宣告胜利并结束战斗。
+    /// 胜负规则：击杀所有敌人则胜利；任一英雄阵亡则战败。
     /// <para>
-    /// 命名说明：类名沿用迁移文档里的 <c>KillAllVictoryRule</c>，但当前实现绑定的是
-    /// <see cref="Game.Battle.Runtime.Rules.StageHandlers.IStageHandler.IsStageCleared"/>（后续可替换为真正“击杀计数”规则）。
+    /// 优先级：战败检测优先于胜利检测——若英雄在清场同帧阵亡，判定为战败。
     /// </para>
     /// </summary>
     public sealed class KillAllVictoryRule : IVictoryRule
@@ -20,13 +19,30 @@ namespace Game.Battle.Runtime.Rules.VictoryRules
         /// <inheritdoc />
         public void Tick(BattleContext context, float deltaTime)
         {
-            if (!context.StageHandler.IsStageCleared)
+            if (IsBattleFinished)
             {
                 return;
             }
 
-            IsBattleFinished = true;
-            IsVictory = true;
+            // 战败检测（优先）：任意英雄 HP 归零
+            for (int i = 0; i < context.Registry.Heroes.Count; i++)
+            {
+                if (!context.Registry.Heroes[i].IsAlive)
+                {
+                    IsBattleFinished = true;
+                    IsVictory = false;
+                    context.DebugTraceService.TraceStateChange("Battle", "Running", "Defeat");
+                    return;
+                }
+            }
+
+            // 胜利检测：关卡流程已清场
+            if (context.StageHandler.IsStageCleared)
+            {
+                IsBattleFinished = true;
+                IsVictory = true;
+                context.DebugTraceService.TraceStateChange("Battle", "Running", "Victory");
+            }
         }
     }
 }

@@ -14,7 +14,7 @@ namespace Game.Battle.Runtime.Bootstrap
     /// 重要：该类属于"接入层"，不是战斗核心逻辑；核心应保持可脱离 Unity 运行与单测。
     /// </para>
     /// </summary>
-    public sealed class BattleRunnerBehaviour : MonoBehaviour
+    public class BattleRunnerBehaviour : MonoBehaviour
     {
         // ─── Inspector 配置 ───────────────────────────────────────────────────
 
@@ -150,8 +150,19 @@ namespace Game.Battle.Runtime.Bootstrap
                 logCommandConsumed: _logCommandConsumed);
 
             BattleWorld world = new BattleWorld(debugTraceService: debugTraceService);
-            _bootstrap.EnterBattle(world);
+            _bootstrap.EnterBattle(world, setupContext: SetupContext);
             _lastInputCommandFrame = -1;
+        }
+
+        /// <summary>
+        /// Context 构建完成后、战斗启动前的钩子：子类在此注册热更词条/Buff 工厂等内容。
+        /// <para>
+        /// 默认为空，Hotfix 子类覆盖即可，无需改动任何 Runtime 代码。
+        /// 例：<c>context.TraitFactory.Register("trait_damage_boost", id => new DamageBoostTrait(id));</c>
+        /// </para>
+        /// </summary>
+        protected virtual void SetupContext(BattleContext context)
+        {
         }
 
         /// <summary>停止战斗并保存录像。</summary>

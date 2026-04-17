@@ -36,6 +36,9 @@ namespace Game.Battle.Runtime.Entities.Hero
         /// <summary>当前生命值。</summary>
         public float CurrentHp { get; set; } = 100f;
 
+        /// <summary>是否仍存活（与 AIEntity.IsAlive 语义一致，供 VictoryRule / DeathService 查询）。</summary>
+        public bool IsAlive => CurrentHp > 0f;
+
         // ─── 移动 ──────────────────────────────────────────────────────────────
 
         /// <summary>移动速度（单位：世界坐标/秒）。</summary>
