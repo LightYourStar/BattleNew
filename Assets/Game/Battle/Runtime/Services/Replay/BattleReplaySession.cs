@@ -1,42 +1,31 @@
+using System;
 using Game.Battle.Runtime.Core;
-using Game.Battle.Runtime.Entities.Hero;
 using Game.Battle.Runtime.Services.DebugTrace;
-using UnityEngine;
 
 namespace Game.Battle.Runtime.Services.Replay
 {
     /// <summary>
     /// 回放会话：把 <see cref="ReplayRecord"/> 重新"喂"给一个全新的 <see cref="BattleWorld"/>，
-    /// 走与正常战斗完全一致的命令消费链，不需要改动 BattleWorld 任何代码。
+    /// 走与正常战斗完全一致的命令消费链，保证逻辑结果可完全复现。
     /// <para>
-    /// 使用流程：
-    /// <code>
-    /// // 1. 录制阶段结束后，导出录像
-    /// ReplayRecord record = bootstrap.World.Context.ReplayService.ExportRecord();
-    ///
-    /// // 2. 创建回放会话
-    /// BattleReplaySession session = new BattleReplaySession(record);
-    /// session.Start();
-    ///
-    /// // 3. 每帧驱动
-    /// session.Update(Time.deltaTime);
-    ///
-    /// // 4. 检查是否播放完毕
-    /// if (session.IsFinished) { ... }
-    /// </code>
+    /// 关键设计：
+    /// <list type="bullet">
+    ///   <item><see cref="ReplayNetAdapter"/> 把录像命令伪装成"远端命令"注入 OrderBus，
+    ///         BattleWorld 感知不到当前是回放还是正常战斗。</item>
+    ///   <item>初始状态由 <see cref="ReplayRecord.Loadout"/> 还原（英雄/武器/RNG 种子），
+    ///         保证与录制时完全一致。</item>
+    ///   <item><paramref name="setupContext"/> 回调与录制时相同，确保注册表（HeroDef/WeaponDef/TraitFactory 等）
+    ///         在回放世界中同样可用。</item>
+    /// </list>
     /// </para>
     /// </summary>
     public sealed class BattleReplaySession
     {
         private readonly ReplayRecord _record;
         private readonly BattleWorld _world;
+        private readonly Action<BattleContext>? _setupContext;
 
-        /// <summary>是否已经开始。</summary>
         public bool IsStarted { get; private set; }
-
-        /// <summary>
-        /// 是否已播完：当逻辑帧超过录像最大帧时置 true。
-        /// </summary>
         public bool IsFinished { get; private set; }
 
         /// <summary>当前回放到的逻辑帧号。</summary>
@@ -45,10 +34,7 @@ namespace Game.Battle.Runtime.Services.Replay
         /// <summary>录像总帧数（含无命令帧）。</summary>
         public int TotalFrames => _record.MaxFrame + 1;
 
-        /// <summary>
-        /// 回放速度倍率（1.0 = 原速，2.0 = 2 倍速，0.5 = 半速）。
-        /// 调整后对 Update 传入的 deltaTime 做缩放。
-        /// </summary>
+        /// <summary>回放速度倍率（1.0 = 原速，2.0 = 双倍速，0.5 = 半速）。</summary>
         public float PlaybackSpeed { get; set; } = 1f;
 
         /// <summary>内部驱动的 BattleWorld（供可视化层只读访问）。</summary>
@@ -57,18 +43,22 @@ namespace Game.Battle.Runtime.Services.Replay
         /// <summary>
         /// 构造回放会话。
         /// </summary>
-        /// <param name="record">录像数据（必须已 Seal）。</param>
+        /// <param name="record">已封存的录像数据。</param>
         /// <param name="fixedStep">与录制时相同的逻辑帧步长，默认 1/30s。</param>
-        /// <param name="debugTraceService">可选：传入追踪服务用于回放调试日志。</param>
+        /// <param name="debugTraceService">可选：回放调试日志服务。</param>
+        /// <param name="setupContext">
+        /// 可选：与录制时相同的注册回调（注册 HeroDef / WeaponDef / TraitFactory / TraitPool 等）。
+        /// 若省略，词条命令等依赖注册表的操作在回放时会静默失败（与录制行为不一致）。
+        /// </param>
         public BattleReplaySession(
             ReplayRecord record,
             float fixedStep = 1f / 30f,
-            IDebugTraceService? debugTraceService = null)
+            IDebugTraceService? debugTraceService = null,
+            Action<BattleContext>? setupContext = null)
         {
             _record = record;
+            _setupContext = setupContext;
 
-            // ReplayNetAdapter 把录像命令伪装成"网络远端命令"注入 OrderBus，
-            // BattleWorld 完全感知不到当前是回放还是正常战斗。
             ReplayNetAdapter replayAdapter = new(record);
 
             _world = new BattleWorld(
@@ -78,7 +68,7 @@ namespace Game.Battle.Runtime.Services.Replay
         }
 
         /// <summary>
-        /// 启动回放：播种初始实体（与录制时一致），启动帧循环。
+        /// 启动回放：还原注册表（setupContext）→ 按 Loadout 播种实体 → 启动帧循环。
         /// </summary>
         public void Start()
         {
@@ -87,15 +77,19 @@ namespace Game.Battle.Runtime.Services.Replay
                 return;
             }
 
-            // 和 BattleBootstrap.SeedMinimalLoop 保持一致
-            _world.Context.Registry.Heroes.Add(new HeroEntity("hero_1", Vector3.zero));
+            // 1. 先填充注册表（与录制时相同的 setupContext）
+            _setupContext?.Invoke(_world.Context);
+
+            // 2. 用录像携带的 Loadout 播种（还原英雄/武器/RNG 种子）
+            BattleLoadout loadout = _record.Loadout ?? new BattleLoadout();
+            _world.SeedFromLoadout(loadout);
+
+            // 3. 启动帧循环
             _world.Start();
             IsStarted = true;
         }
 
-        /// <summary>
-        /// 每渲染帧驱动：将 deltaTime 乘以速度倍率后交给 BattleWorld 推进逻辑帧。
-        /// </summary>
+        /// <summary>每渲染帧驱动：将 deltaTime 乘以速度倍率后交给 BattleWorld 推进逻辑帧。</summary>
         public void Update(float deltaTime)
         {
             if (!IsStarted || IsFinished)
@@ -105,26 +99,15 @@ namespace Game.Battle.Runtime.Services.Replay
 
             _world.Update(deltaTime * PlaybackSpeed);
 
-            // 当逻辑帧超过录像最大帧时，停止回放
             if (CurrentFrame > _record.MaxFrame)
             {
                 Finish();
             }
         }
 
-        /// <summary>暂停回放（暂停底层帧循环）。</summary>
-        public void Pause()
-        {
-            _world.Pause();
-        }
+        public void Pause() => _world.Pause();
+        public void Resume() => _world.Resume();
 
-        /// <summary>继续回放（恢复底层帧循环）。</summary>
-        public void Resume()
-        {
-            _world.Resume();
-        }
-
-        /// <summary>手动结束回放并停止底层世界。</summary>
         public void Finish()
         {
             if (IsFinished)

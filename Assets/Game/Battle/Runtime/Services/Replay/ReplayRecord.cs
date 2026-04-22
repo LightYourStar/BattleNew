@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Game.Battle.Runtime.Core;
 
 namespace Game.Battle.Runtime.Services.Replay
 {
@@ -12,6 +13,13 @@ namespace Game.Battle.Runtime.Services.Replay
     public sealed class ReplayRecord
     {
         private readonly List<ReplayFrameData> _frames = new();
+
+        /// <summary>
+        /// 录制时的战斗配置单（英雄/武器/词条池/RNG 种子）。
+        /// 回放时 <see cref="BattleReplaySession"/> 用此还原与录制完全相同的初始状态。
+        /// 在 <see cref="Seal"/> 之前由 <c>LocalReplayService.ExportRecord</c> 写入。
+        /// </summary>
+        public BattleLoadout? Loadout { get; set; }
 
         /// <summary>所有有命令帧的数据列表（只读视图）。</summary>
         public IReadOnlyList<ReplayFrameData> Frames => _frames;

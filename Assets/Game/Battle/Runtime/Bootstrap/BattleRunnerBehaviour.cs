@@ -11,7 +11,12 @@ namespace Game.Battle.Runtime.Bootstrap
     /// 场景级运行器：把 Unity 的 Update 时间轴接入 BattleBootstrap，
     /// 同时支持"正常战斗"和"回放模式"，外部只需在 Inspector 中切换 <see cref="_startAsReplay"/>。
     /// <para>
-    /// 重要：该类属于"接入层"，不是战斗核心逻辑；核心应保持可脱离 Unity 运行与单测。
+    /// 使用方式：
+    /// <list type="bullet">
+    ///   <item>将 <c>HotfixBattleRunnerBehaviour</c>（Hotfix 子类）挂到场景 GameObject，
+    ///         它会覆盖 <see cref="SetupContext"/> 和 <see cref="BuildLoadout"/> 注入具体定义。</item>
+    ///   <item>本类本身是 Runtime 层，不引用任何 Hotfix 类型，保持边界清晰。</item>
+    /// </list>
     /// </para>
     /// </summary>
     public class BattleRunnerBehaviour : MonoBehaviour
@@ -34,7 +39,7 @@ namespace Game.Battle.Runtime.Bootstrap
         private string _heroId = "hero_1";
 
         [Header("Replay Mode")]
-        [Tooltip("勾选后将在 Awake 时进入回放模式（需先通过 SaveLastReplay 存储录像）")]
+        [Tooltip("勾选后将在 Awake 时进入回放模式（需先通过 StopBattle 存储录像）")]
         [SerializeField]
         private bool _startAsReplay;
 
@@ -47,7 +52,7 @@ namespace Game.Battle.Runtime.Bootstrap
 
         private readonly BattleBootstrap _bootstrap = new();
 
-        /// <summary>上次战斗录像（用于下次回放；正常战斗结束后自动保存）。</summary>
+        /// <summary>上次战斗录像（战斗结束后自动保存，用于下次回放）。</summary>
         private ReplayRecord? _lastRecord;
 
         /// <summary>防止同一逻辑帧重复注入输入命令。</summary>
@@ -55,13 +60,9 @@ namespace Game.Battle.Runtime.Bootstrap
 
         // ─── 公开属性 ─────────────────────────────────────────────────────────
 
-        /// <summary>暴露当前 BattleWorld，供表现层（例如可视化脚本）只读访问。</summary>
         public BattleWorld? World => _bootstrap.World;
-
-        /// <summary>当前是否在回放。</summary>
         public bool IsReplaying => _bootstrap.IsReplaying;
 
-        /// <summary>回放进度 0–1；非回放时为 0。</summary>
         public float ReplayProgress
         {
             get
@@ -109,12 +110,6 @@ namespace Game.Battle.Runtime.Bootstrap
 
             _bootstrap.Update(Time.deltaTime);
 
-            // 正常战斗结束后自动保存录像
-            if (!_bootstrap.IsReplaying && _bootstrap.World == null)
-            {
-                // World 变成 null 意味着战斗已由内部 Stop 触发退出；录像已在 ExitBattle 前导出
-            }
-
             // 回放播放完毕后自动退出
             if (_bootstrap.ReplaySession is { IsFinished: true })
             {
@@ -150,19 +145,10 @@ namespace Game.Battle.Runtime.Bootstrap
                 logCommandConsumed: _logCommandConsumed);
 
             BattleWorld world = new BattleWorld(debugTraceService: debugTraceService);
-            _bootstrap.EnterBattle(world, setupContext: SetupContext);
-            _lastInputCommandFrame = -1;
-        }
+            BattleLoadout loadout = BuildLoadout();
 
-        /// <summary>
-        /// Context 构建完成后、战斗启动前的钩子：子类在此注册热更词条/Buff 工厂等内容。
-        /// <para>
-        /// 默认为空，Hotfix 子类覆盖即可，无需改动任何 Runtime 代码。
-        /// 例：<c>context.TraitFactory.Register("trait_damage_boost", id => new DamageBoostTrait(id));</c>
-        /// </para>
-        /// </summary>
-        protected virtual void SetupContext(BattleContext context)
-        {
+            _bootstrap.EnterBattle(world, loadout, SetupContext);
+            _lastInputCommandFrame = -1;
         }
 
         /// <summary>停止战斗并保存录像。</summary>
@@ -172,16 +158,16 @@ namespace Game.Battle.Runtime.Bootstrap
             if (_bootstrap.World != null && !_bootstrap.IsReplaying)
             {
                 _lastRecord = _bootstrap.World.Context.ReplayService.ExportRecord();
-                Debug.Log($"[BattleRunner] 录像已保存，共 {_lastRecord.CommandFrameCount} 个命令帧，最大帧号 {_lastRecord.MaxFrame}。");
+                Debug.Log($"[BattleRunner] 录像已保存，共 {_lastRecord.CommandFrameCount} 个命令帧，" +
+                          $"最大帧号 {_lastRecord.MaxFrame}，" +
+                          $"英雄={_lastRecord.Loadout?.HeroDefId ?? "default"}，" +
+                          $"种子={_lastRecord.Loadout?.RngSeed}。");
             }
 
             _bootstrap.ExitBattle();
             _lastInputCommandFrame = -1;
         }
 
-        /// <summary>
-        /// 用上一局保存的录像开始回放。
-        /// </summary>
         [ContextMenu("Replay Last Battle")]
         public void ReplayLastBattle()
         {
@@ -194,9 +180,6 @@ namespace Game.Battle.Runtime.Bootstrap
             StartReplay(_lastRecord);
         }
 
-        /// <summary>
-        /// 从指定录像开始回放。
-        /// </summary>
         public void StartReplay(ReplayRecord record)
         {
             if (_bootstrap.World != null)
@@ -204,11 +187,12 @@ namespace Game.Battle.Runtime.Bootstrap
                 _bootstrap.ExitBattle();
             }
 
-            Debug.Log($"[BattleRunner] 开始回放，共 {record.CommandFrameCount} 个命令帧，最大帧号 {record.MaxFrame}，速度 {_replaySpeed}x。");
-            _bootstrap.EnterReplay(record, _replaySpeed);
+            Debug.Log($"[BattleRunner] 开始回放，英雄={record.Loadout?.HeroDefId ?? "default"}，" +
+                      $"共 {record.CommandFrameCount} 个命令帧，速度 {_replaySpeed}x。");
+
+            _bootstrap.EnterReplay(record, _replaySpeed, SetupContext);
         }
 
-        /// <summary>暂停/继续回放。</summary>
         [ContextMenu("Toggle Replay Pause")]
         public void ToggleReplayPause()
         {
@@ -229,11 +213,27 @@ namespace Game.Battle.Runtime.Bootstrap
             }
         }
 
-        // ─── 私有 ─────────────────────────────────────────────────────────────
+        // ─── 可被 Hotfix 子类覆盖的钩子 ──────────────────────────────────────
 
         /// <summary>
-        /// 将轴输入转换为 <see cref="MoveCommand"/> 推入 <see cref="OrderBus"/>。
+        /// 注册 HeroDef / WeaponDef / TraitFactory / TraitPool 等的钩子。
+        /// 子类在此填充注册表，Runtime 层默认为空实现，不引用任何 Hotfix 类型。
         /// </summary>
+        protected virtual void SetupContext(BattleContext context)
+        {
+        }
+
+        /// <summary>
+        /// 构建本局 Loadout（英雄选择 / 武器选择 / 词条池）的钩子。
+        /// 子类覆盖以返回玩家在战前 UI 中的选择；Runtime 层默认返回空 Loadout（内置默认值）。
+        /// </summary>
+        protected virtual BattleLoadout BuildLoadout()
+        {
+            return new BattleLoadout();
+        }
+
+        // ─── 私有 ─────────────────────────────────────────────────────────────
+
         private void PushInputCommand(BattleContext context)
         {
             if (_lastInputCommandFrame == context.Time.Frame)

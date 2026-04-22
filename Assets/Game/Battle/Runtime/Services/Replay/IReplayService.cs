@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Game.Battle.Runtime.Commands;
+using Game.Battle.Runtime.Core;
 
 namespace Game.Battle.Runtime.Services.Replay
 {
@@ -24,5 +25,12 @@ namespace Game.Battle.Runtime.Services.Replay
         /// 用于持久化存储或交给 <see cref="BattleReplaySession"/> 回放。
         /// </summary>
         ReplayRecord ExportRecord();
+
+        /// <summary>
+        /// 将本局 <see cref="BattleLoadout"/> 写入录像（在战斗开始时调用）。
+        /// 回放时 <see cref="BattleReplaySession"/> 从 <see cref="ReplayRecord.Loadout"/> 读取，
+        /// 确保初始状态（英雄属性、武器、RNG 种子）与录制时完全一致。
+        /// </summary>
+        void SetLoadout(BattleLoadout loadout);
     }
 }

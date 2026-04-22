@@ -1,15 +1,13 @@
 using System;
 using Game.Battle.Runtime.Core;
-using Game.Battle.Runtime.Entities.Hero;
 using Game.Battle.Runtime.Services.Replay;
-using UnityEngine;
 
 namespace Game.Battle.Runtime.Bootstrap
 {
     /// <summary>
     /// 战斗启动器：只做生命周期编排（创建/启动/驱动/退出），不写具体战斗规则。
     /// <para>
-    /// 同时支持两种模式：
+    /// 支持两种模式：
     /// <list type="bullet">
     ///   <item>正常战斗：<see cref="EnterBattle"/> → <see cref="Update"/> → <see cref="ExitBattle"/></item>
     ///   <item>回放模式：<see cref="EnterReplay"/> → <see cref="Update"/> → <see cref="ExitBattle"/></item>
@@ -31,19 +29,34 @@ namespace Game.Battle.Runtime.Bootstrap
         // ─── 正常战斗 ─────────────────────────────────────────────────────────
 
         /// <summary>
-        /// 进入战斗：创建（或注入）BattleWorld，播种最小实体，并启动固定帧循环。
+        /// 进入战斗：创建（或注入）BattleWorld，调用 setupContext（注册 HeroDef/WeaponDef/Trait 等），
+        /// 再按 Loadout 播种实体，最后启动固定帧循环。
         /// </summary>
         /// <param name="world">可选：外部注入的 BattleWorld（默认创建新实例）。</param>
-        /// <param name="setupContext">
-        /// 可选：Context 构建完成后、战斗启动前的钩子回调。
-        /// 用于在 Hotfix/外部层注册词条工厂、Buff 工厂等，保持 Runtime 层对具体实现的无感知。
-        /// 示例：<c>ctx => ctx.TraitFactory.Register("damage_boost", id => new DamageBoostTrait(id))</c>
+        /// <param name="loadout">
+        /// 战斗配置单（英雄、武器、词条池、RNG 种子）。
+        /// 为 null 时退化为内置默认英雄 + 默认武器（最小闭环）。
         /// </param>
-        public void EnterBattle(BattleWorld? world = null, Action<BattleContext>? setupContext = null)
+        /// <param name="setupContext">
+        /// 可选：Context 构建完成后、播种之前的钩子回调。
+        /// 在此注册 HeroDef / WeaponDef / TraitFactory / TraitPool 等，保持 Runtime 层无感知。
+        /// </param>
+        public void EnterBattle(
+            BattleWorld? world = null,
+            BattleLoadout? loadout = null,
+            Action<BattleContext>? setupContext = null)
         {
             World = world ?? new BattleWorld();
+
+            // 先让 Hotfix/外部层填充注册表
             setupContext?.Invoke(World.Context);
-            SeedMinimalLoop(World.Context);
+
+            // 再播种实体（依赖注册表内容）
+            World.SeedFromLoadout(loadout ?? new BattleLoadout());
+
+            // 将 Loadout 存入 ReplayRecord（便于后续导出录像时携带）
+            World.Context.ReplayService.SetLoadout(World.Context.Loadout);
+
             World.Start();
         }
 
@@ -52,11 +65,20 @@ namespace Game.Battle.Runtime.Bootstrap
         /// <summary>
         /// 进入回放：从 <see cref="ReplayRecord"/> 重建一局战斗并开始播放。
         /// <para>
-        /// 关键设计：回放内部使用 <see cref="ReplayNetAdapter"/> 把录像命令注入 OrderBus，
-        /// 走与正常战斗完全相同的命令消费链，无需改动 BattleWorld。
+        /// 关键：<see cref="ReplayRecord.Loadout"/> 中的英雄/武器/种子与录制时完全一致，
+        /// 确保回放的初始状态不偏离。
         /// </para>
         /// </summary>
-        public void EnterReplay(ReplayRecord record, float playbackSpeed = 1f)
+        /// <param name="record">已封存的录像（必须调用过 <c>Seal</c>）。</param>
+        /// <param name="playbackSpeed">回放速度倍率（默认 1.0 = 原速）。</param>
+        /// <param name="setupContext">
+        /// 可选：与录制时相同的注册回调（注册 HeroDef/WeaponDef/TraitFactory 等）。
+        /// 若不传，词条命令在回放时会静默失败。
+        /// </param>
+        public void EnterReplay(
+            ReplayRecord record,
+            float playbackSpeed = 1f,
+            Action<BattleContext>? setupContext = null)
         {
             if (!record.IsSealed)
             {
@@ -64,7 +86,7 @@ namespace Game.Battle.Runtime.Bootstrap
                 return;
             }
 
-            ReplaySession = new BattleReplaySession(record);
+            ReplaySession = new BattleReplaySession(record, setupContext: setupContext);
             ReplaySession.PlaybackSpeed = playbackSpeed;
             ReplaySession.Start();
 
@@ -74,9 +96,7 @@ namespace Game.Battle.Runtime.Bootstrap
 
         // ─── 公共驱动 ─────────────────────────────────────────────────────────
 
-        /// <summary>
-        /// 外部驱动更新：正常战斗与回放模式统一入口。
-        /// </summary>
+        /// <summary>外部驱动更新：正常战斗与回放模式统一入口。</summary>
         public void Update(float deltaTime)
         {
             if (ReplaySession != null)
@@ -103,16 +123,6 @@ namespace Game.Battle.Runtime.Bootstrap
             }
 
             World = null;
-        }
-
-        // ─── 私有 ─────────────────────────────────────────────────────────────
-
-        /// <summary>
-        /// 播种最小闭环数据：当前仅创建单英雄，敌人由 <c>WaveSystem</c> 刷新。
-        /// </summary>
-        private static void SeedMinimalLoop(BattleContext context)
-        {
-            context.Registry.Heroes.Add(new HeroEntity("hero_1", Vector3.zero));
         }
     }
 }

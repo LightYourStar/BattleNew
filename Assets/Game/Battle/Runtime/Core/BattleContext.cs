@@ -23,7 +23,8 @@ namespace Game.Battle.Runtime.Core
     /// </summary>
     public sealed class BattleContext
     {
-        // ─── 基础设施 ───
+        // ─── 基础设施 ───────────────────────────────────────────────────────────
+
         public BattleTime Time { get; }
         public EntityRegistry Registry { get; }
         public IReplayService ReplayService { get; }
@@ -32,10 +33,31 @@ namespace Game.Battle.Runtime.Core
         public IConfigProvider? ConfigProvider { get; }
         public IDebugTraceService DebugTraceService { get; }
 
-        // ─── 命令 ───
+        // ─── 随机数 ────────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// 确定性随机数生成器：种子来自 <see cref="BattleLoadout.RngSeed"/>。
+        /// 所有战斗内随机（词条 Offer、刷怪偏移等）必须且只能通过此实例取随机数。
+        /// </summary>
+        public BattleRng Rng { get; internal set; } = default!;
+
+        // ─── 配置单 ────────────────────────────────────────────────────────────
+
+        /// <summary>本局配置单（英雄/武器/词条池/种子）；回放时原样从 ReplayRecord 读取。</summary>
+        public BattleLoadout Loadout { get; internal set; } = default!;
+
+        // ─── 命令 ──────────────────────────────────────────────────────────────
+
         public OrderBus OrderBus { get; internal set; } = default!;
 
-        // ─── 实体系统 ───
+        // ─── 数据注册表（原型/定义） ────────────────────────────────────────────
+
+        public HeroDefRegistry HeroDefRegistry { get; internal set; } = default!;
+        public WeaponDefRegistry WeaponDefRegistry { get; internal set; } = default!;
+        public TraitPoolRegistry TraitPoolRegistry { get; internal set; } = default!;
+
+        // ─── 实体系统 ───────────────────────────────────────────────────────────
+
         public HeroSystem HeroSystem { get; internal set; } = default!;
         public HeroMovementController HeroMovementController { get; internal set; } = default!;
         public HeroTargetingService HeroTargetingService { get; internal set; } = default!;
@@ -44,23 +66,32 @@ namespace Game.Battle.Runtime.Core
         public BulletSystem BulletSystem { get; internal set; } = default!;
         public BuffSystem BuffSystem { get; internal set; } = default!;
         public TraitSystem TraitSystem { get; internal set; } = default!;
+        public TraitFactory TraitFactory { get; internal set; } = default!;
         public WaveSystem WaveSystem { get; internal set; } = default!;
         public SpawnSystem SpawnSystem { get; internal set; } = default!;
 
-        // ─── 词条工厂 ───
-        public TraitFactory TraitFactory { get; internal set; } = default!;
+        // ─── 词条 Offer ────────────────────────────────────────────────────────
 
-        // ─── 子弹链 ───
+        /// <summary>
+        /// 词条升级候选服务：用 <see cref="Rng"/> 从本局词条池中加权抽取候选列表。
+        /// 由 <c>SeedFromLoadout</c> 在战斗初始化时创建，此后只读。
+        /// </summary>
+        public ITraitOfferService TraitOfferService { get; internal set; } = default!;
+
+        // ─── 子弹链 ────────────────────────────────────────────────────────────
+
         public BulletFactory BulletFactory { get; internal set; } = default!;
         public WeaponFireService WeaponFireService { get; internal set; } = default!;
         public HitResolver HitResolver { get; internal set; } = default!;
 
-        // ─── 伤害/死亡 ───
+        // ─── 伤害/死亡 ─────────────────────────────────────────────────────────
+
         public DamageService DamageService { get; internal set; } = default!;
         public DeathService DeathService { get; internal set; } = default!;
         public HitReactionService HitReactionService { get; internal set; } = default!;
 
-        // ─── 规则 ───
+        // ─── 规则 ──────────────────────────────────────────────────────────────
+
         public IPlayMode PlayMode { get; internal set; } = default!;
         public IStageHandler StageHandler { get; internal set; } = default!;
         public IVictoryRule VictoryRule { get; internal set; } = default!;

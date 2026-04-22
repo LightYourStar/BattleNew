@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Game.Battle.Runtime.Commands;
 using Game.Battle.Runtime.Commands.Commands;
@@ -16,6 +17,7 @@ using Game.Battle.Runtime.Services.DebugTrace;
 using Game.Battle.Runtime.Services.Events;
 using Game.Battle.Runtime.Services.Network;
 using Game.Battle.Runtime.Services.Replay;
+using UnityEngine;
 
 namespace Game.Battle.Runtime.Core
 {
@@ -71,6 +73,79 @@ namespace Game.Battle.Runtime.Core
             FrameLoop.Tick(deltaTime);
         }
 
+        // ─── 播种 ──────────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// 根据 <see cref="BattleLoadout"/> 播种初始实体并初始化 RNG / 词条 Offer 服务。
+        /// <para>
+        /// 流程：
+        /// <list type="number">
+        ///   <item>写入 <see cref="BattleContext.Loadout"/>，按 RngSeed 创建 <see cref="BattleRng"/>。</item>
+        ///   <item>查找 <see cref="HeroDef"/>，用其基础属性创建 <see cref="HeroEntity"/>。</item>
+        ///   <item>查找 <see cref="WeaponDef"/>（先用 Loadout.WeaponDefId，再回退 HeroDef.DefaultWeaponId），
+        ///         创建 <see cref="WeaponRuntime"/> 挂到英雄。</item>
+        ///   <item>合并英雄 + 武器词条池，创建 <see cref="TraitOfferService"/>。</item>
+        /// </list>
+        /// </para>
+        /// </summary>
+        public void SeedFromLoadout(BattleLoadout loadout)
+        {
+            Context.Loadout = loadout;
+
+            // RNG：种子为 0 时自动用时间戳
+            long seed = loadout.RngSeed != 0
+                ? loadout.RngSeed
+                : DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            Context.Rng = new BattleRng(seed);
+            loadout.RngSeed = seed; // 写回（确保 ReplayRecord 携带实际使用的种子）
+
+            // 查找英雄定义（可为 null，退化为默认英雄）
+            HeroDef? heroDef = string.IsNullOrEmpty(loadout.HeroDefId)
+                ? null
+                : Context.HeroDefRegistry.Get(loadout.HeroDefId);
+
+            // 创建英雄实体
+            HeroEntity hero = new("hero_1", Vector3.zero)
+            {
+                DefId = heroDef?.Id ?? string.Empty,
+                MaxHp = heroDef?.MaxHp ?? 100f,
+                CurrentHp = heroDef?.MaxHp ?? 100f,
+                MoveSpeed = heroDef?.MoveSpeed ?? 5f,
+                AttackRange = heroDef?.AttackRange ?? 5f,
+            };
+
+            // 查找武器定义：优先 Loadout.WeaponDefId，其次 HeroDef.DefaultWeaponId
+            string weaponId = !string.IsNullOrEmpty(loadout.WeaponDefId)
+                ? loadout.WeaponDefId
+                : heroDef?.DefaultWeaponId ?? string.Empty;
+
+            WeaponDef? weaponDef = string.IsNullOrEmpty(weaponId)
+                ? null
+                : Context.WeaponDefRegistry.Get(weaponId);
+
+            if (weaponDef != null)
+            {
+                hero.CurrentWeapon = new WeaponRuntime(weaponDef);
+            }
+            else
+            {
+                // 未注册武器时使用内置默认武器（保持最小闭环可运行）
+                hero.CurrentWeapon = new WeaponRuntime(FallbackWeaponDef());
+            }
+
+            Context.Registry.Heroes.Add(hero);
+
+            // 词条池：合并 Loadout.TraitPoolIds（由上层传入，已融合英雄池 + 武器池）
+            string[] poolIds = loadout.TraitPoolIds.Length > 0
+                ? loadout.TraitPoolIds
+                : MergeTraitPoolIds(heroDef, weaponDef);
+
+            List<TraitPoolEntry> resolvedPool = Context.TraitPoolRegistry.Resolve(poolIds);
+            Context.TraitOfferService = new TraitOfferService(resolvedPool);
+        }
+
+        // ─── 固定帧 Tick ────────────────────────────────────────────────────────
+
         /// <summary>
         /// 固定逻辑帧推进，严格按文档约定顺序：
         /// 命令消费 → Hero → AI → Bullet → Buff → Trait → Wave → Stage → Victory
@@ -98,7 +173,7 @@ namespace Game.Battle.Runtime.Core
                 string? targetId = Context.HeroTargetingService.FindNearestAliveEnemy(Context, hero);
                 hero.LockedTargetId = targetId;
 
-                // 朝向（HeroMovementController）：有目标且未在移动时，面朝目标
+                // 朝向：有目标且未在移动时，面朝目标
                 if (!hero.IsMovingThisFrame && targetId != null)
                 {
                     var target = Context.Registry.FindAI(targetId);
@@ -111,12 +186,12 @@ namespace Game.Battle.Runtime.Core
                 // 状态切换（HeroStateController）
                 Context.HeroStateController.UpdateState(Context, hero, targetId != null, hero.IsMovingThisFrame);
 
-                // 武器发射（WeaponFireService）
+                // 武器发射（WeaponFireService：硬直 / 冷却 / 枪口迭代 / 弹道路由）
                 Context.WeaponFireService.TryFire(Context, hero, targetId, deltaTime);
 
                 // 清帧标记
                 hero.IsMovingThisFrame = false;
-                hero.MoveDirectionThisFrame = UnityEngine.Vector3.zero;
+                hero.MoveDirectionThisFrame = Vector3.zero;
             }
 
             // ③ AI：状态 + 追击 + 攻击
@@ -168,10 +243,6 @@ namespace Game.Battle.Runtime.Core
             }
         }
 
-        /// <summary>
-        /// 消费 MoveCommand：委托 HeroMovementController 推进位置 + 更新朝向，
-        /// 并在英雄实体上设置本帧移动标记（供后续状态机判断）。
-        /// </summary>
         private void ApplyMove(MoveCommand cmd, float deltaTime)
         {
             HeroEntity? hero = Context.Registry.FindHero(cmd.HeroId);
@@ -201,7 +272,6 @@ namespace Game.Battle.Runtime.Core
         {
             if (!Context.TraitFactory.TryCreate(cmd.TraitId, cmd.HeroId, out ITrait? trait) || trait == null)
             {
-                // 工厂中未注册该词条 Id：在 Bootstrap 或 Hotfix 初始化时调用 TraitFactory.Register 注册
                 Context.DebugTraceService.TraceStateChange(cmd.HeroId, "NoTrait", $"TraitNotFound:{cmd.TraitId}");
                 return;
             }
@@ -209,6 +279,8 @@ namespace Game.Battle.Runtime.Core
             Context.TraitSystem.EquipTrait(Context, trait);
             Context.DebugTraceService.TraceStateChange(cmd.HeroId, "NoTrait", $"Trait:{cmd.TraitId}");
         }
+
+        // ─── BuildContext ───────────────────────────────────────────────────────
 
         private static BattleContext BuildContext(
             float fixedStep,
@@ -230,12 +302,16 @@ namespace Game.Battle.Runtime.Core
             FrameCommandBuffer commandBuffer = new();
             context.OrderBus = new OrderBus(commandBuffer, netAdapter, debugTraceService);
 
-            // 实体系统（英雄四路分离）
+            // 数据注册表（Hotfix/setupContext 回调填充内容）
+            context.HeroDefRegistry = new HeroDefRegistry();
+            context.WeaponDefRegistry = new WeaponDefRegistry();
+            context.TraitPoolRegistry = new TraitPoolRegistry();
+
+            // 实体系统
             context.HeroSystem = new Entities.Hero.HeroSystem();
             context.HeroMovementController = new HeroMovementController();
             context.HeroTargetingService = new HeroTargetingService();
             context.HeroStateController = new HeroStateController();
-
             context.AISystem = new Entities.AI.AISystem();
             context.BulletSystem = new Entities.Bullet.BulletSystem();
             context.BuffSystem = new Entities.Buff.BuffSystem();
@@ -259,7 +335,45 @@ namespace Game.Battle.Runtime.Core
             context.StageHandler = new DefaultStageHandler();
             context.VictoryRule = new KillAllVictoryRule();
 
+            // Rng / TraitOfferService / Loadout 由 SeedFromLoadout 在 BuildContext 之后写入；
+            // 先赋予确定性默认值，防止 Tick 前的 null 访问。
+            context.Loadout = new BattleLoadout();
+            context.Rng = new BattleRng(0);
+            context.TraitOfferService = new TraitOfferService(new List<TraitPoolEntry>());
+
             return context;
         }
+
+        // ─── 私有辅助 ───────────────────────────────────────────────────────────
+
+        private static string[] MergeTraitPoolIds(HeroDef? heroDef, WeaponDef? weaponDef)
+        {
+            List<string> ids = new();
+            if (heroDef != null)
+            {
+                ids.AddRange(heroDef.TraitPoolIds);
+            }
+            if (weaponDef != null)
+            {
+                foreach (string id in weaponDef.TraitPoolIds)
+                {
+                    if (!ids.Contains(id))
+                    {
+                        ids.Add(id);
+                    }
+                }
+            }
+            return ids.ToArray();
+        }
+
+        /// <summary>内置默认武器：追踪弹、单枪口，供无武器注册时保持最小闭环。</summary>
+        private static WeaponDef FallbackWeaponDef() => new("weapon_default")
+        {
+            BulletType = BulletType.Tracking,
+            Damage = 10f,
+            BulletSpeed = 12f,
+            CooldownSeconds = 0.75f,
+            Sockets = new[] { FireSocket.Default },
+        };
     }
 }

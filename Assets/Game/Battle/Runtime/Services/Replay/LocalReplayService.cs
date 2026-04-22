@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Game.Battle.Runtime.Commands;
+using Game.Battle.Runtime.Core;
 
 namespace Game.Battle.Runtime.Services.Replay
 {
@@ -18,6 +19,9 @@ namespace Game.Battle.Runtime.Services.Replay
 
         /// <summary>当前录制到的最大帧号（从未录到命令时为 -1）。</summary>
         private int _maxRecordedFrame = -1;
+
+        /// <summary>本局配置单，由 <see cref="SetLoadout"/> 写入。</summary>
+        private BattleLoadout? _loadout;
 
         /// <inheritdoc />
         public void RecordFrameCommands(int frame, IReadOnlyList<IFrameCommand> commands)
@@ -56,12 +60,19 @@ namespace Game.Battle.Runtime.Services.Replay
         public ReplayRecord ExportRecord()
         {
             ReplayRecord record = new();
+            record.Loadout = _loadout;
             foreach (var kvp in _records)
             {
                 record.AddFrame(new ReplayFrameData(kvp.Key, kvp.Value));
             }
             record.Seal(_maxRecordedFrame);
             return record;
+        }
+
+        /// <inheritdoc />
+        public void SetLoadout(BattleLoadout loadout)
+        {
+            _loadout = loadout;
         }
     }
 }

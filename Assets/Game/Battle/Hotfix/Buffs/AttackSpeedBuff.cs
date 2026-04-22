@@ -20,18 +20,22 @@ namespace Game.Battle.Hotfix.Buffs
         public override void OnAdd(BattleContext context)
         {
             HeroEntity? hero = FindHero(context);
-            if (hero != null)
+            if (hero?.CurrentWeapon != null)
             {
-                hero.AttackCooldownSeconds -= _cooldownReduction;
+                hero.CurrentWeapon.CooldownSeconds -= _cooldownReduction;
+                if (hero.CurrentWeapon.CooldownSeconds < 0.05f)
+                {
+                    hero.CurrentWeapon.CooldownSeconds = 0.05f;
+                }
             }
         }
 
         public override void OnRemove(BattleContext context)
         {
             HeroEntity? hero = FindHero(context);
-            if (hero != null)
+            if (hero?.CurrentWeapon != null)
             {
-                hero.AttackCooldownSeconds += _cooldownReduction;
+                hero.CurrentWeapon.CooldownSeconds += _cooldownReduction;
             }
         }
 
