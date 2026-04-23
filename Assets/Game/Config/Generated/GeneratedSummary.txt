@@ -1,1 +1,1 @@
-Phase-1 generation finished for AttrConfigTable.
+Config generation OK (see generation-summary.json).

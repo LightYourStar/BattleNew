@@ -7,14 +7,14 @@ namespace Game.Config.Runtime
     /// 运行时配置提供者：组合「注册表 + 内存缓存 + 可注入加载器」，与具体资源形态（SO、AB、二进制）解耦。
     /// <para>
     /// HybridCLR 边界（稳定层）：本类与 <see cref="ConfigRegistry"/>、<see cref="ConfigCache"/> 保持精简；
-    /// 表内容类型、Addressables 加载细节、远端 manifest 解析等放在可热更或注入的 <c>_tableLoader</c> 一侧。
+    /// 表内容类型、Addressables 加载细节、远端 manifest 解析等放在可热更或注入的 <see cref="IConfigAssetLoader"/> 实现一侧。
     /// </para>
     /// </summary>
     public sealed class ConfigProvider : IConfigProvider
     {
         private readonly ConfigRegistry _registry;
         private readonly ConfigCache _cache;
-        private readonly Func<string, Type, object> _tableLoader;
+        private readonly IConfigAssetLoader _assetLoader;
         private ConfigVersionInfo _activeVersion;
 
         /// <summary>最近一次 <see cref="Reload"/> 之前生效的版本；供 <see cref="Rollback"/> 一步恢复，单次回滚后清空。</summary>
@@ -22,15 +22,21 @@ namespace Game.Config.Runtime
 
         /// <summary>
         /// <paramref name="registry"/>：表名到类型的映射；
-        /// <paramref name="tableLoader"/>：按表名与实际类型加载资源对象（例如 Resources.Load）；
+        /// <paramref name="assetLoader"/>：按表名与实际类型加载资源对象；
         /// <paramref name="initialVersion"/>：初始版本信息，可为 null 时使用默认 bootstrap 版本。
         /// </summary>
-        public ConfigProvider(ConfigRegistry registry, Func<string, Type, object> tableLoader, ConfigVersionInfo initialVersion = null)
+        public ConfigProvider(ConfigRegistry registry, IConfigAssetLoader assetLoader, ConfigVersionInfo initialVersion = null)
         {
             _registry = registry ?? throw new ArgumentNullException(nameof(registry));
             _cache = new ConfigCache();
-            _tableLoader = tableLoader ?? throw new ArgumentNullException(nameof(tableLoader));
+            _assetLoader = assetLoader ?? throw new ArgumentNullException(nameof(assetLoader));
             _activeVersion = initialVersion ?? ConfigVersionInfo.Create("bootstrap", "local");
+        }
+
+        /// <summary>使用委托作为加载器的便捷构造（内部包装为 <see cref="DelegateConfigAssetLoader"/>）。</summary>
+        public ConfigProvider(ConfigRegistry registry, Func<string, Type, object> tableLoader, ConfigVersionInfo initialVersion = null)
+            : this(registry, new DelegateConfigAssetLoader(tableLoader), initialVersion)
+        {
         }
 
         /// <inheritdoc />
@@ -58,7 +64,7 @@ namespace Game.Config.Runtime
                 return false;
             }
 
-            var loaded = _tableLoader(tableName, tableType);
+            var loaded = _assetLoader.LoadTable(tableName, tableType);
             if (loaded is TTable typed)
             {
                 _cache.Put(tableName, typed);

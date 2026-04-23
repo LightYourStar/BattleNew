@@ -1,0 +1,4 @@
+# 策划导出为 UTF-8 CSV；首行为列名；以 # 开头的行为注释
+Id,Name,Value
+1,Attack,10
+2,Health,100

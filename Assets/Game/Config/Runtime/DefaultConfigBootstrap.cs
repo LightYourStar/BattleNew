@@ -1,6 +1,5 @@
 using Game.Config.Contracts;
 using Game.Config.Generated;
-using UnityEngine;
 
 namespace Game.Config.Runtime
 {
@@ -26,7 +25,7 @@ namespace Game.Config.Runtime
 
             return new ConfigProvider(
                 registry,
-                (tableName, _) => Resources.Load<ScriptableObject>($"Config/{tableName}"),
+                new ResourcesConfigAssetLoader("Config"),
                 ConfigVersionInfo.Create("v0", "Resources"));
         }
     }

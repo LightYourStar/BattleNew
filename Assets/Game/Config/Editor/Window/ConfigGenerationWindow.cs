@@ -25,7 +25,7 @@ namespace Game.Config.Editor.Window
         private void OnGUI()
         {
             GUILayout.Label("Config Generation Pipeline", EditorStyles.boldLabel);
-            if (GUILayout.Button("Run Phase-1 Generate"))
+            if (GUILayout.Button("Run Generate (Validate + Export)"))
             {
                 RunPipeline();
             }
