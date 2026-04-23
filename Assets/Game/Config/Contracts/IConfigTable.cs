@@ -4,6 +4,9 @@ namespace Game.Config.Contracts
 {
     /// <summary>
     /// 单张配置表的查询契约：一行对应一个 <typeparamref name="TItem"/>，主键为 <typeparamref name="TKey"/>。
+    /// <para>
+    /// HybridCLR 边界（稳定层）：查询形状固定；各表具体行类型、字段可在 Generated/热更侧演进。
+    /// </para>
     /// </summary>
     public interface IConfigTable<TKey, TItem>
     {

@@ -1,3 +1,4 @@
+using Game.Config.Contracts;
 using Game.Config.Generated;
 using UnityEngine;
 
@@ -30,6 +31,20 @@ namespace Game.Config.Runtime
             catch (System.Exception ex)
             {
                 Debug.LogError($"[ConfigRuntimeExample] Get failed: {ex.Message}");
+            }
+
+            // Reload / Rollback：演示版本锚点与缓存清空（实际项目里应在拉表成功后再 Reload）
+            var reloadResult = provider.Reload(ConfigVersionInfo.Create("v1", "Resources"));
+            Debug.Log($"[ConfigRuntimeExample] Reload -> {reloadResult.ActiveVersion.Version}");
+
+            var rollbackResult = provider.Rollback();
+            if (rollbackResult.Success)
+            {
+                Debug.Log($"[ConfigRuntimeExample] Rollback -> {rollbackResult.ActiveVersion.Version}");
+            }
+            else
+            {
+                Debug.LogWarning($"[ConfigRuntimeExample] Rollback: {rollbackResult.Message}");
             }
         }
     }

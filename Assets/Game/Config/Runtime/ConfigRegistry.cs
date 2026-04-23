@@ -5,6 +5,7 @@ namespace Game.Config.Runtime
 {
     /// <summary>
     /// 表注册表：把「逻辑表名」映射到「C# 表类型」，供 <see cref="ConfigProvider"/> 在加载时知道要转成哪种类型。
+    /// <para>HybridCLR 边界（稳定层）：映射表名与 Type；具体表类可由热更程序集提供，注册动作通常在启动/bootstrap 完成。</para>
     /// </summary>
     public sealed class ConfigRegistry
     {

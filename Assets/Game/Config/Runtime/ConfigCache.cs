@@ -2,7 +2,10 @@ using System.Collections.Generic;
 
 namespace Game.Config.Runtime
 {
-    /// <summary>已加载表实例的内存缓存，避免同一张表被重复 IO 或反序列化。</summary>
+    /// <summary>
+    /// 已加载表实例的内存缓存，避免同一张表被重复 IO 或反序列化。
+    /// <para>HybridCLR 边界（稳定层）：仅做对象字典；缓存的实例类型可来自热更表类。</para>
+    /// </summary>
     public sealed class ConfigCache
     {
         private readonly Dictionary<string, object> _cache = new Dictionary<string, object>();

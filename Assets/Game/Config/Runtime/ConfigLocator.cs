@@ -4,6 +4,7 @@ namespace Game.Config.Runtime
 {
     /// <summary>
     /// 按「表名 + 主键」定位单行：在已有 <see cref="IConfigProvider"/> 之上的一层薄封装，业务可读性更好。
+    /// <para>HybridCLR 边界（稳定层）：薄封装；业务可整类移到热更，只要仍依赖 <see cref="IConfigProvider"/>。</para>
     /// </summary>
     public sealed class ConfigLocator
     {

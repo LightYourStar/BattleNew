@@ -2,6 +2,7 @@ namespace Game.Config.Adapters
 {
     /// <summary>
     /// 旧通行证数据到新配置的适配占位：把旧系统 ID 映射为新表主键或行索引（此处为恒等示例）。
+    /// <para>HybridCLR 边界（可热更倾向）：适配规则随版本迭代，宜放在热更程序集。</para>
     /// </summary>
     public sealed class OldPassDataAdapter
     {

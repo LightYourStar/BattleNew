@@ -7,6 +7,7 @@ namespace Game.Config.Generated
 {
     /// <summary>
     /// 示例表：来源表 Attr；运行时以 ScriptableObject 资产形式存在，实现 <see cref="IConfigTable{TKey,TItem}"/> 供查询。
+    /// <para>HybridCLR 边界（可热更倾向）：典型生成表类，可置于热更 DLL；查询接口在 Contracts 保持稳定。</para>
     /// </summary>
     [CreateAssetMenu(menuName = "Game/Config/AttrConfigTable", fileName = "AttrConfigTable")]
     public sealed class AttrConfigTable : ScriptableObject, IConfigTable<int, AttrConfigItem>

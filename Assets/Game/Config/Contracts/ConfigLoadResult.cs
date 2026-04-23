@@ -1,7 +1,8 @@
 namespace Game.Config.Contracts
 {
     /// <summary>
-    /// 一次加载或 Reload 的结果：成功时可记录新旧版本；失败时可配合回滚策略恢复上一版本。
+    /// 一次加载、Reload 或 Rollback 的结果：成功时可记录新旧版本；失败时可配合 <see cref="IConfigProvider.Rollback"/> 恢复。
+    /// <para>HybridCLR 边界（稳定层）：纯 DTO，无行为。</para>
     /// </summary>
     public sealed class ConfigLoadResult
     {
