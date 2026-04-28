@@ -27,7 +27,8 @@ namespace Game.Config.Editor.Excel
             var input = new ConfigValidationInput
             {
                 FileName = fileNameForReport,
-                SheetName = sheetName
+                SheetName = sheetName,
+                SourceKind = "csv"
             };
 
             var headerLineIndex = -1;
@@ -74,13 +75,43 @@ namespace Game.Config.Editor.Excel
 
         private static List<string> SplitCsvLine(string line)
         {
-            var parts = line.Split(',');
-            for (var i = 0; i < parts.Length; i++)
+            // Minimal CSV parser:
+            // - supports quoted fields: "a,b"
+            // - supports escaped quote inside quoted field: ""
+            var parts = new List<string>();
+            var sb = new StringBuilder();
+            var inQuotes = false;
+
+            for (var i = 0; i < line.Length; i++)
             {
-                parts[i] = parts[i].Trim();
+                var ch = line[i];
+                if (ch == '"')
+                {
+                    if (inQuotes && i + 1 < line.Length && line[i + 1] == '"')
+                    {
+                        sb.Append('"');
+                        i++;
+                    }
+                    else
+                    {
+                        inQuotes = !inQuotes;
+                    }
+
+                    continue;
+                }
+
+                if (ch == ',' && !inQuotes)
+                {
+                    parts.Add(sb.ToString().Trim());
+                    sb.Clear();
+                    continue;
+                }
+
+                sb.Append(ch);
             }
 
-            return new List<string>(parts);
+            parts.Add(sb.ToString().Trim());
+            return parts;
         }
     }
 }

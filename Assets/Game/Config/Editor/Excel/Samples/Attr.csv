@@ -1,4 +1,5 @@
-# 策划导出为 UTF-8 CSV；首行为列名；以 # 开头的行为注释
-Id,Name,Value
-1,Attack,10
-2,Health,100
+# Demo: 覆盖多种类型；带逗号的字段请用双引号包裹
+Id,Name,Value,LongVal,FloatVal,DoubleVal,Pos2,Pos3,Pos4,ViewRect,Tint,IntList,LongList,FloatList,DoubleList,Tags
+int,string,int,long,float,double,vector2,vector3,vector4,rect,color,int[],long[],float[],double[],string[]
+1,Attack,10,10000000000,1.5,2.25,"(1,2)","1,2,3","1,2,3,4","0,0,1920,1080",#FF8040FF,"1,2,3","10000000000,20000000000","1.1,2.2","3.14,6.28","melee,physical"
+2,Health,100,20000000000,2.5,6.75,"(3,4)","4,5,6","4,5,6,7","100,200,640,360","1,0.5,0.25,1","10,20","30000000000,40000000000","3.5,4.5","9.99,8.88","tank,defense"

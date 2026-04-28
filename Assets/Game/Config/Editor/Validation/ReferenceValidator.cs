@@ -58,7 +58,7 @@ namespace Game.Config.Editor.Validation
                         result.AddError(
                             from.FileName,
                             from.SheetName,
-                            i + 2,
+                            from.FirstDataExcelRow + i,
                             rule.FromColumn,
                             $"Foreign key not found in {rule.ToSheet}.{rule.ToKeyColumn}: {fk}");
                     }

@@ -7,7 +7,7 @@ namespace Game.Config.Editor.Validation
     public sealed class PrimaryKeyValidator : IConfigValidator
     {
         /// <inheritdoc />
-        /// <remarks>行号使用 i+2：假定第 1 行为表头，数据从第 2 行起，与 Excel 行号对齐。</remarks>
+        /// <remarks>行号与 <see cref="ConfigValidationInput.FirstDataExcelRow"/> 对齐。</remarks>
         public ConfigValidationResult Validate(ConfigValidationInput input)
         {
             var result = new ConfigValidationResult();
@@ -15,7 +15,7 @@ namespace Game.Config.Editor.Validation
             {
                 if (!input.Rows[i].TryGetValue("Id", out var id) || string.IsNullOrWhiteSpace(id))
                 {
-                    result.AddError(input.FileName, input.SheetName, i + 2, "Id", "Primary key cannot be empty.");
+                    result.AddError(input.FileName, input.SheetName, input.FirstDataExcelRow + i, "Id", "Primary key cannot be empty.");
                 }
             }
 

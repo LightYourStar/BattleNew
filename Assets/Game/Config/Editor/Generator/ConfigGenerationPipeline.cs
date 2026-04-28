@@ -31,6 +31,13 @@ namespace Game.Config.Editor.Generator
 
             foreach (var table in batch.Tables)
             {
+                TypeRowProcessor.TryConsumeTypeRow(table);
+            }
+
+            SyntheticEnumGenerator.GenerateForBatch(batch);
+
+            foreach (var table in batch.Tables)
+            {
                 foreach (var validator in _singleTableValidators)
                 {
                     report.AddRange(validator.Validate(table).Errors);
@@ -62,7 +69,7 @@ namespace Game.Config.Editor.Generator
                 {
                     sheetName = t.SheetName,
                     sourceFileName = t.FileName,
-                    sourceKind = t.FileName.EndsWith(".csv") ? "csv" : "mock",
+                    sourceKind = string.IsNullOrEmpty(t.SourceKind) ? "unknown" : t.SourceKind,
                     dataRowCount = t.Rows.Count
                 });
             }
@@ -70,7 +77,7 @@ namespace Game.Config.Editor.Generator
             return new ConfigGenerationSummary
             {
                 generatedAtUtc = System.DateTime.UtcNow.ToString("o"),
-                pipelineVersion = "2",
+                pipelineVersion = "3",
                 validationSuccess = report.IsValid,
                 validationErrorCount = report.Errors.Count,
                 tables = tables.ToArray()

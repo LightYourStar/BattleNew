@@ -1,12 +1,14 @@
 #if UNITY_EDITOR
+using System;
 using System.IO;
+using System.Linq;
 using Game.Config.Contracts;
 using UnityEngine;
 
 namespace Game.Config.Editor.Excel
 {
     /// <summary>
-    /// 解析策划表：优先从 <c>Assets/Game/Config/Editor/Excel/Samples/*.csv</c> 读取；缺失时回退到内存 mock。
+    /// 解析策划表：优先在 Samples 下所有 xlsx 中按 sheet 名查表，其次同名 csv，最后回退到内存 mock。
     /// </summary>
     public sealed class ExcelParser
     {
@@ -17,24 +19,39 @@ namespace Game.Config.Editor.Excel
         {
             var batch = new ConfigValidationBatch();
             var baseDir = Path.Combine(Application.dataPath, SamplesRelative);
-            var attrPath = Path.Combine(baseDir, "Attr.csv");
-            var buffPath = Path.Combine(baseDir, "Buff.csv");
+            var attr = TryReadTable(baseDir, "Attr");
+            batch.Tables.Add(attr ?? ParseMockAttr());
 
-            if (File.Exists(attrPath))
+            var buff = TryReadTable(baseDir, "Buff");
+            if (buff != null)
             {
-                batch.Tables.Add(CsvTableReader.Read(attrPath, "Attr.csv", "Attr"));
-            }
-            else
-            {
-                batch.Tables.Add(ParseMockAttr());
-            }
-
-            if (File.Exists(buffPath))
-            {
-                batch.Tables.Add(CsvTableReader.Read(buffPath, "Buff.csv", "Buff"));
+                batch.Tables.Add(buff);
             }
 
             return batch;
+        }
+
+        private static ConfigValidationInput TryReadTable(string baseDir, string tableName)
+        {
+            if (Directory.Exists(baseDir))
+            {
+                var xlsxFiles = Directory.GetFiles(baseDir, "*.xlsx");
+                foreach (var xlsxPath in xlsxFiles.OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
+                {
+                    if (XlsxTableReader.TryReadExactSheet(xlsxPath, Path.GetFileName(xlsxPath), tableName, out var parsed))
+                    {
+                        return parsed;
+                    }
+                }
+            }
+
+            var csvPath = Path.Combine(baseDir, tableName + ".csv");
+            if (File.Exists(csvPath))
+            {
+                return CsvTableReader.Read(csvPath, tableName + ".csv", tableName);
+            }
+
+            return null;
         }
 
         /// <summary>内存 mock，与 Attr 表示例列一致。</summary>
@@ -43,7 +60,8 @@ namespace Game.Config.Editor.Excel
             var input = new ConfigValidationInput
             {
                 FileName = "MockAttr.xlsx",
-                SheetName = "Attr"
+                SheetName = "Attr",
+                SourceKind = "mock"
             };
 
             input.Columns.Add("Id");

@@ -22,7 +22,7 @@ namespace Game.Config.Editor.Validation
 
                 if (!seen.Add(id))
                 {
-                    result.AddError(input.FileName, input.SheetName, i + 2, "Id", $"Duplicate key: {id}");
+                    result.AddError(input.FileName, input.SheetName, input.FirstDataExcelRow + i, "Id", $"Duplicate key: {id}");
                 }
             }
 

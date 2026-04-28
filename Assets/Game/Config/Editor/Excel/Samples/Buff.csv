@@ -1,4 +1,5 @@
-# Buff.AttrId 引用 Attr.Id（见 ConfigReferenceRules）
+# Buff.AttrId 引用 Attr.Id（见 ConfigReferenceRules）；第二行为类型行
 Id,Name,AttrId
+int,string,int
 1,BuffA,1
 2,BuffB,2
