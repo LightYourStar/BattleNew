@@ -40,7 +40,17 @@ namespace Game.Config.Editor.Manifest
 
         public static void SyncWithDiscovered(ConfigManifest manifest, IReadOnlyList<string> discovered)
         {
-            var set = new HashSet<string>(discovered ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+            foreach (var t in manifest.Tables)
+            {
+                if (t.TableName != null)
+                {
+                    t.TableName = t.TableName.Trim();
+                }
+            }
+
+            var set = new HashSet<string>(
+                (discovered ?? Array.Empty<string>()).Select(x => (x ?? string.Empty).Trim()).Where(x => x.Length > 0),
+                StringComparer.OrdinalIgnoreCase);
 
             foreach (var table in set.OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
             {
@@ -55,8 +65,22 @@ namespace Game.Config.Editor.Manifest
                 }
             }
 
-            manifest.Tables = manifest.Tables
-                .Where(t => !string.IsNullOrWhiteSpace(t.TableName))
+            var merged = new Dictionary<string, ConfigTableEntry>(StringComparer.OrdinalIgnoreCase);
+            foreach (var t in manifest.Tables.Where(x => !string.IsNullOrWhiteSpace(x.TableName)))
+            {
+                var key = t.TableName.Trim();
+                if (!merged.TryGetValue(key, out var keep))
+                {
+                    t.TableName = key;
+                    merged[key] = t;
+                    continue;
+                }
+
+                keep.Enabled |= t.Enabled;
+                keep.UseCustomLayout |= t.UseCustomLayout;
+            }
+
+            manifest.Tables = merged.Values
                 .OrderBy(t => t.TableName, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 

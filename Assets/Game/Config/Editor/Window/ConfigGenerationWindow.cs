@@ -1,6 +1,7 @@
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Game.Config.Editor.Excel;
 using Game.Config.Editor.Generator;
@@ -23,8 +24,9 @@ namespace Game.Config.Editor.Window
         private readonly Dictionary<string, string> _sourceKind = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private string _search = string.Empty;
         private bool _showOnlyFailed;
-        private string _summary = "Processed: 0 | Success: 0 | Failed: 0 | 0ms";
+        private string _summary = "Last run: — | Processed: 0 | Success: 0 | Failed: 0 | 0ms";
         private bool _showAdvanced;
+        private bool _showSelectionTools;
 
         /// <summary>菜单入口：<c>Tools/Config/Generation Window</c>。</summary>
         [MenuItem("Tools/Config/Generation Window")]
@@ -59,22 +61,20 @@ namespace Game.Config.Editor.Window
             DrawToolbar();
 
             EditorGUILayout.Space();
+            DrawSelectionToolsFoldout();
+
+            EditorGUILayout.Space();
             DrawTableList();
 
             EditorGUILayout.Space();
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("Generate Enabled", GUILayout.Height(28f)))
+                if (GUILayout.Button("Generate", GUILayout.Height(28f)))
                 {
                     RunPipeline(ConfigManifestService.GetEnabledTableNames(_manifest), validateOnly: false);
                 }
 
-                if (GUILayout.Button("Generate Highlighted"))
-                {
-                    RunPipeline(GetHighlightedTables(), validateOnly: false);
-                }
-
-                if (GUILayout.Button("Validate Only"))
+                if (GUILayout.Button("Validate", GUILayout.Height(28f)))
                 {
                     RunPipeline(ConfigManifestService.GetEnabledTableNames(_manifest), validateOnly: true);
                 }
@@ -114,6 +114,15 @@ namespace Game.Config.Editor.Window
                 var pipeline = new ConfigGenerationPipeline();
                 runResult = pipeline.RunForTables(tableNames, _manifest, validateOnly);
             }
+            catch (IOException ex) when (IsLikelyFileLock(ex))
+            {
+                _status = "File locked";
+                _errors =
+                    "The CSV or workbook may still be open in Excel (exclusive lock). Close it or save a copy, then retry.\n\n" +
+                    ex;
+                Repaint();
+                return;
+            }
             catch (Exception ex)
             {
                 _status = "Pipeline Exception";
@@ -140,7 +149,8 @@ namespace Game.Config.Editor.Window
                 _lastTableStatus[t] = "Missing";
             }
 
-            _summary = $"Processed: {runResult.ProcessedTables.Count} | Success: {(report.IsValid ? runResult.ProcessedTables.Count : 0)} | Failed: {(report.IsValid ? 0 : report.Errors.Count)} | {runResult.ElapsedMilliseconds}ms";
+            _summary =
+                $"Last run: {(validateOnly ? "Validate" : "Generate")} | Processed: {runResult.ProcessedTables.Count} | Success: {(report.IsValid ? runResult.ProcessedTables.Count : 0)} | Failed: {(report.IsValid ? 0 : report.Errors.Count)} | {runResult.ElapsedMilliseconds}ms";
             if (report.IsValid)
             {
                 _status = "Success";
@@ -171,6 +181,14 @@ namespace Game.Config.Editor.Window
             EditorGUILayout.HelpBox(_summary, MessageType.None);
         }
 
+        private static bool IsLikelyFileLock(IOException ex)
+        {
+            var m = ex.Message ?? string.Empty;
+            return m.IndexOf("Sharing violation", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   m.IndexOf("being used by another process", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   m.IndexOf("cannot access the file", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
         private void DrawToolbar()
         {
             using (new EditorGUILayout.HorizontalScope())
@@ -178,40 +196,66 @@ namespace Game.Config.Editor.Window
                 _search = EditorGUILayout.TextField("Search", _search);
                 _showOnlyFailed = EditorGUILayout.ToggleLeft("Show Failed Only", _showOnlyFailed, GUILayout.Width(140f));
             }
+        }
 
-            using (new EditorGUILayout.HorizontalScope())
+        private void DrawSelectionToolsFoldout()
+        {
+            if (_manifest == null)
             {
-                if (GUILayout.Button("Highlight All", GUILayout.Width(100f)))
-                {
-                    foreach (var t in _manifest.Tables)
-                    {
-                        _highlighted.Add(t.TableName);
-                    }
-                }
+                return;
+            }
 
-                if (GUILayout.Button("Clear Highlight", GUILayout.Width(100f)))
-                {
-                    _highlighted.Clear();
-                }
+            _showSelectionTools = EditorGUILayout.Foldout(_showSelectionTools, "Selection & highlighted batch", true);
+            if (!_showSelectionTools)
+            {
+                return;
+            }
 
-                if (GUILayout.Button("Invert Highlight", GUILayout.Width(110f)))
+            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+            {
+                using (new EditorGUILayout.HorizontalScope())
                 {
-                    var all = _manifest.Tables.Select(t => t.TableName).ToList();
-                    var next = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                    foreach (var t in all)
+                    if (GUILayout.Button("Highlight All", GUILayout.Width(100f)))
                     {
-                        if (!_highlighted.Contains(t))
+                        foreach (var t in _manifest.Tables)
                         {
-                            next.Add(t);
+                            _highlighted.Add(t.TableName);
                         }
                     }
 
-                    _highlighted.Clear();
-                    foreach (var t in next)
+                    if (GUILayout.Button("Clear Highlight", GUILayout.Width(100f)))
                     {
-                        _highlighted.Add(t);
+                        _highlighted.Clear();
+                    }
+
+                    if (GUILayout.Button("Invert Highlight", GUILayout.Width(110f)))
+                    {
+                        var all = _manifest.Tables.Select(t => t.TableName).ToList();
+                        var next = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        foreach (var t in all)
+                        {
+                            if (!_highlighted.Contains(t))
+                            {
+                                next.Add(t);
+                            }
+                        }
+
+                        _highlighted.Clear();
+                        foreach (var t in next)
+                        {
+                            _highlighted.Add(t);
+                        }
                     }
                 }
+
+                if (GUILayout.Button("Generate highlighted only"))
+                {
+                    RunPipeline(GetHighlightedTables(), validateOnly: false);
+                }
+
+                EditorGUILayout.HelpBox(
+                    "Use table name toggles to build a subset, then generate here. Main \"Generate\" uses enabled checkboxes only.",
+                    MessageType.None);
             }
         }
 
@@ -230,7 +274,7 @@ namespace Game.Config.Editor.Window
                 GUILayout.Label("Table", GUILayout.Width(200f));
                 GUILayout.Label("Source", GUILayout.Width(60f));
                 GUILayout.Label("Last Status", GUILayout.Width(120f));
-                GUILayout.Label("Actions", GUILayout.Width(140f));
+                GUILayout.Label("Actions", GUILayout.Width(80f));
             }
 
             _tableScroll = EditorGUILayout.BeginScrollView(_tableScroll, GUILayout.Height(220f));
@@ -269,12 +313,7 @@ namespace Game.Config.Editor.Window
                     var source = _sourceKind.TryGetValue(table.TableName, out var sourceKind) ? sourceKind : "unknown";
                     GUILayout.Label(source, GUILayout.Width(60f));
                     GUILayout.Label(status, GUILayout.Width(120f));
-                    if (GUILayout.Button("Validate", GUILayout.Width(65f)))
-                    {
-                        RunPipeline(new List<string> { table.TableName }, validateOnly: true);
-                    }
-
-                    if (GUILayout.Button("Generate", GUILayout.Width(65f)))
+                    if (GUILayout.Button("Generate", GUILayout.Width(75f)))
                     {
                         RunPipeline(new List<string> { table.TableName }, validateOnly: false);
                     }
@@ -282,7 +321,9 @@ namespace Game.Config.Editor.Window
             }
 
             EditorGUILayout.EndScrollView();
-            EditorGUILayout.HelpBox("Single checkbox controls manifest enabled state. Click table name button to highlight for Generate Highlighted.", MessageType.Info);
+            EditorGUILayout.HelpBox(
+                "Checkbox: include table in main Generate / Validate. Table name toggle: highlight for \"Selection & highlighted batch\".",
+                MessageType.Info);
             EditorUtility.SetDirty(_manifest);
         }
 

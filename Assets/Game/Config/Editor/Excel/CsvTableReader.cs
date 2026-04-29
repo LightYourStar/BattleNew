@@ -22,7 +22,16 @@ namespace Game.Config.Editor.Excel
 
         public static ConfigValidationInput Read(string absolutePath, string fileNameForReport, string sheetName, ExcelReadOptions options)
         {
-            var raw = File.ReadAllText(absolutePath, Encoding.UTF8);
+            string raw;
+            using (var fs = new FileStream(
+                       absolutePath,
+                       FileMode.Open,
+                       FileAccess.Read,
+                       FileShare.ReadWrite | FileShare.Delete))
+            using (var reader = new StreamReader(fs, Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+            {
+                raw = reader.ReadToEnd();
+            }
             if (raw.Length > 0 && raw[0] == '\uFEFF')
             {
                 raw = raw.TrimStart('\uFEFF');
