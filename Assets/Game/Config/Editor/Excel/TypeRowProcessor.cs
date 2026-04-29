@@ -22,6 +22,11 @@ namespace Game.Config.Editor.Excel
                 return;
             }
 
+            if (!input.AllowAutoDetectTypeRow)
+            {
+                return;
+            }
+
             var first = input.Rows[0];
             var tokens = new List<string>(input.Columns.Count);
             foreach (var col in input.Columns)

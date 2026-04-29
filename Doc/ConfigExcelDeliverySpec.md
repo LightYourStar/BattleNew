@@ -5,7 +5,7 @@
 - 解析优先级：`xlsx > csv > mock`
 - 外键规则来源：`Assets/Game/Config/Editor/Validation/ConfigReferenceRules.cs`
 - 生成摘要：`Assets/Game/Config/Generated/generation-summary.json`
-- 当前默认解析表：`Attr`、`Buff`（由 `ExcelParser.BuildDefaultBatch()` 决定）
+- 解析表清单来源：`Assets/Game/Config/Editor/ConfigManifest.asset`（窗口可刷新并勾选）
 - 类型矩阵文档：`Doc/ConfigFieldTypeMatrix.md`
 - 管线版本：`pipelineVersion = "3"`（写入 `generation-summary.json`）
 
@@ -55,12 +55,19 @@
 
 1. 策划更新 `Samples/*.xlsx`（可一个文件多个 Sheet）或 `Samples/<表名>.csv`。
 2. 程序在 Unity 菜单执行：`Tools/Config/Generation Window`。
-3. 点击 `Run Generate (Validate + Export)`。
-4. 查看结果：
+3. 点击 `Refresh Table List From Samples` 同步到 manifest。
+4. 在列表中设置：
+   - 单勾选 `Enabled`：是否参与 `Generate Enabled`
+   - 点击表名按钮：高亮该表（用于 `Generate Highlighted`）
+5. 点击 `Generate Enabled` 或 `Generate Highlighted`（也可在每行使用 `Validate/Generate`）。
+6. 查看结果：
    - 校验错误列表（窗口）
    - `generation-summary.json`（CI 归档与对比）
    - `GeneratedSummary.txt`（快速人工确认）
-5. 可选：执行类型自测菜单 `Tools/Config/Run Type Parser Self Test`。
+   - `Assets/Game/Config/Generated/Tables/*.gen.cs`（按本次处理表自动生成类文件）
+   - `Assets/Game/Config/Data/*ConfigRaw.asset` 与 `Assets/Resources/Config/*ConfigRaw.asset`（按本次处理表导出的通用配置资产）
+7. 如只想检查不导出资产，点击 `Validate Only`。
+8. 可选：执行类型自测菜单 `Tools/Config/Run Type Parser Self Test`。
 
 ## 7. 可选开关（开发向）
 
@@ -75,13 +82,16 @@
 ## 8. 常见问题排查
 
 - **Q: 为什么读到了 mock？**  
-  A: 没有找到同名 Sheet（xlsx）且没有 `Samples/<表名>.csv`，检查 `Samples` 目录、Sheet 命名以及当前 `BuildDefaultBatch()` 是否包含该逻辑表。
+  A: 没有找到同名 Sheet（xlsx）且没有 `Samples/<表名>.csv`，检查 `Samples` 目录、Sheet 命名及该表是否在 manifest 中启用。
 
 - **Q: 外键没报错是不是没生效？**  
   A: 先确认 `ConfigReferenceRules.cs` 已添加对应规则，并且来源表与目标表都在本次批次中。
 
 - **Q: 我新增了 `Skill` 表但没有参与校验？**  
-  A: 需要在 `ExcelParser.BuildDefaultBatch()` 里把 `Skill` 加入批次，否则工具链不会读取该表。
+  A: 先在窗口点 `Refresh Table List From Samples`，再勾选该表 `Enabled`（或高亮后走 `Generate Highlighted`）。
+
+- **Q: 旧表的表头/类型/数据起始行不一致怎么办？**  
+  A: 在窗口 `Advanced` 设置全局行索引，或在 `ConfigManifest.asset` 对具体表开启 `UseCustomLayout` 覆盖全局配置。
 
 - **Q: CI 怎么判断是否通过？**  
   A: 读取 `generation-summary.json` 的 `validationSuccess` 与 `validationErrorCount`。

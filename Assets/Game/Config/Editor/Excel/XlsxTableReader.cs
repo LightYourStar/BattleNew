@@ -21,11 +21,18 @@ namespace Game.Config.Editor.Excel
 
         public static ConfigValidationInput Read(string absolutePath, string fileNameForReport, string sheetName)
         {
+            return Read(absolutePath, fileNameForReport, sheetName, new ExcelReadOptions());
+        }
+
+        public static ConfigValidationInput Read(string absolutePath, string fileNameForReport, string sheetName, ExcelReadOptions options)
+        {
+            options ??= new ExcelReadOptions();
             var input = new ConfigValidationInput
             {
                 FileName = fileNameForReport,
                 SheetName = sheetName,
-                SourceKind = "xlsx"
+                SourceKind = "xlsx",
+                AllowAutoDetectTypeRow = options.AutoDetectTypeRowWhenEmpty
             };
 
             using (var archive = ZipFile.OpenRead(absolutePath))
@@ -40,29 +47,50 @@ namespace Game.Config.Editor.Excel
                 using (var stream = sheetEntry.Open())
                 {
                     var doc = XDocument.Load(stream);
-                    var rows = doc.Root?
+                    var rawRows = doc.Root?
                         .Element(SsNs + "sheetData")?
                         .Elements(SsNs + "row")
                         .ToList();
-                    if (rows == null || rows.Count == 0)
+                    if (rawRows == null || rawRows.Count == 0)
                     {
                         return input;
                     }
 
-                    var headerMap = ReadHeader(rows[0], sharedStrings);
-                    if (headerMap.Count == 0)
+                    var matrix = new List<List<string>>();
+                    foreach (var rr in rawRows)
+                    {
+                        matrix.Add(ReadRow(rr, sharedStrings));
+                    }
+
+                    if (options.HeaderRowIndex < 0 || options.HeaderRowIndex >= matrix.Count)
                     {
                         return input;
                     }
 
+                    var headerMap = ReadHeader(matrix[options.HeaderRowIndex]);
                     for (var i = 0; i < headerMap.Count; i++)
                     {
                         input.Columns.Add(headerMap[i] ?? string.Empty);
                     }
 
-                    for (var r = 1; r < rows.Count; r++)
+                    if (options.TypeRowIndex >= 0 && options.TypeRowIndex < matrix.Count)
                     {
-                        var rowValues = ReadRow(rows[r], sharedStrings);
+                        var typeRow = matrix[options.TypeRowIndex];
+                        for (var i = 0; i < headerMap.Count; i++)
+                        {
+                            input.ColumnTypeTokens.Add(i < typeRow.Count ? (typeRow[i] ?? string.Empty).Trim() : string.Empty);
+                        }
+                    }
+
+                    var dataStart = options.DataStartRowIndex;
+                    if (dataStart < 0)
+                    {
+                        dataStart = options.HeaderRowIndex + 1;
+                    }
+
+                    for (var r = dataStart; r < matrix.Count; r++)
+                    {
+                        var rowValues = matrix[r];
                         var row = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                         for (var c = 0; c < headerMap.Count; c++)
                         {
@@ -83,6 +111,31 @@ namespace Game.Config.Editor.Excel
             return input;
         }
 
+        /// <summary>读取工作簿内全部 sheet 名（按 workbook 顺序）。</summary>
+        public static List<string> GetSheetNames(string absolutePath)
+        {
+            using (var archive = ZipFile.OpenRead(absolutePath))
+            {
+                var wbEntry = archive.GetEntry("xl/workbook.xml");
+                if (wbEntry == null)
+                {
+                    return new List<string>();
+                }
+
+                using (var wbStream = wbEntry.Open())
+                {
+                    var wbDoc = XDocument.Load(wbStream);
+                    return wbDoc.Root?
+                               .Element(SsNs + "sheets")?
+                               .Elements(SsNs + "sheet")
+                               .Select(s => (string)s.Attribute("name"))
+                               .Where(n => !string.IsNullOrWhiteSpace(n))
+                               .ToList()
+                           ?? new List<string>();
+                }
+            }
+        }
+
         /// <summary>
         /// 仅当目标 sheet 存在时才返回 true；不会回退首张 sheet，适用于多表同文件场景的精准匹配。
         /// </summary>
@@ -92,7 +145,8 @@ namespace Game.Config.Editor.Excel
             {
                 FileName = fileNameForReport,
                 SheetName = sheetName,
-                SourceKind = "xlsx"
+                SourceKind = "xlsx",
+                AllowAutoDetectTypeRow = true
             };
 
             using (var archive = ZipFile.OpenRead(absolutePath))
@@ -117,7 +171,7 @@ namespace Game.Config.Editor.Excel
                         return true;
                     }
 
-                    var headerMap = ReadHeader(rows[0], sharedStrings);
+                    var headerMap = ReadHeader(ReadRow(rows[0], sharedStrings));
                     for (var i = 0; i < headerMap.Count; i++)
                     {
                         input.Columns.Add(headerMap[i] ?? string.Empty);
@@ -237,9 +291,9 @@ namespace Game.Config.Editor.Excel
             return archive.GetEntry(entryPath.Replace("\\", "/"));
         }
 
-        private static List<string> ReadHeader(XElement rowElement, IReadOnlyList<string> sharedStrings)
+        private static List<string> ReadHeader(List<string> rowValues)
         {
-            var values = ReadRow(rowElement, sharedStrings);
+            var values = new List<string>(rowValues);
             for (var i = 0; i < values.Count; i++)
             {
                 values[i] = values[i]?.Trim() ?? string.Empty;

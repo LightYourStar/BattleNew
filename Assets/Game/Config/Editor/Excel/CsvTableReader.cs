@@ -17,6 +17,11 @@ namespace Game.Config.Editor.Excel
         /// </summary>
         public static ConfigValidationInput Read(string absolutePath, string fileNameForReport, string sheetName)
         {
+            return Read(absolutePath, fileNameForReport, sheetName, new ExcelReadOptions());
+        }
+
+        public static ConfigValidationInput Read(string absolutePath, string fileNameForReport, string sheetName, ExcelReadOptions options)
+        {
             var raw = File.ReadAllText(absolutePath, Encoding.UTF8);
             if (raw.Length > 0 && raw[0] == '\uFEFF')
             {
@@ -24,14 +29,7 @@ namespace Game.Config.Editor.Excel
             }
 
             var lines = raw.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
-            var input = new ConfigValidationInput
-            {
-                FileName = fileNameForReport,
-                SheetName = sheetName,
-                SourceKind = "csv"
-            };
-
-            var headerLineIndex = -1;
+            var effectiveRows = new List<List<string>>();
             for (var li = 0; li < lines.Length; li++)
             {
                 var line = lines[li].Trim();
@@ -39,32 +37,58 @@ namespace Game.Config.Editor.Excel
                 {
                     continue;
                 }
-
-                headerLineIndex = li;
-                break;
+                effectiveRows.Add(SplitCsvLine(line));
             }
 
-            if (headerLineIndex < 0)
+            return BuildInputFromRows(effectiveRows, fileNameForReport, sheetName, "csv", options);
+        }
+
+        private static ConfigValidationInput BuildInputFromRows(
+            List<List<string>> rows,
+            string fileNameForReport,
+            string sheetName,
+            string sourceKind,
+            ExcelReadOptions options)
+        {
+            options ??= new ExcelReadOptions();
+            var input = new ConfigValidationInput
+            {
+                FileName = fileNameForReport,
+                SheetName = sheetName,
+                SourceKind = sourceKind,
+                AllowAutoDetectTypeRow = options.AutoDetectTypeRowWhenEmpty
+            };
+
+            if (rows.Count == 0 || options.HeaderRowIndex < 0 || options.HeaderRowIndex >= rows.Count)
             {
                 return input;
             }
 
-            var headers = SplitCsvLine(lines[headerLineIndex]);
+            var headers = rows[options.HeaderRowIndex];
             input.Columns.AddRange(headers);
 
-            for (var ri = headerLineIndex + 1; ri < lines.Length; ri++)
+            if (options.TypeRowIndex >= 0 && options.TypeRowIndex < rows.Count)
             {
-                var line = lines[ri].Trim();
-                if (line.Length == 0 || line.StartsWith("#", StringComparison.Ordinal))
+                var typeRow = rows[options.TypeRowIndex];
+                for (var i = 0; i < input.Columns.Count; i++)
                 {
-                    continue;
+                    input.ColumnTypeTokens.Add(i < typeRow.Count ? typeRow[i].Trim() : string.Empty);
                 }
+            }
 
-                var cells = SplitCsvLine(line);
+            var dataStart = options.DataStartRowIndex;
+            if (dataStart < 0)
+            {
+                dataStart = options.HeaderRowIndex + 1;
+            }
+
+            for (var ri = dataStart; ri < rows.Count; ri++)
+            {
+                var cells = rows[ri];
                 var row = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                for (var c = 0; c < headers.Count && c < cells.Count; c++)
+                for (var c = 0; c < headers.Count; c++)
                 {
-                    row[headers[c]] = cells[c];
+                    row[headers[c]] = c < cells.Count ? cells[c] : string.Empty;
                 }
 
                 input.Rows.Add(row);

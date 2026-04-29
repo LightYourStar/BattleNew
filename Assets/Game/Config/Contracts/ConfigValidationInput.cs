@@ -24,6 +24,9 @@ namespace Game.Config.Contracts
         /// </summary>
         public List<string> ColumnTypeTokens = new List<string>();
 
+        /// <summary>当 <see cref="ColumnTypeTokens"/> 为空时，是否允许自动从首条数据行识别类型行。</summary>
+        public bool AllowAutoDetectTypeRow = true;
+
         /// <summary>
         /// Excel 中第一条数据行的行号（1-based）：无类型行为 2；有类型行为 3（表头 + 类型行）。
         /// </summary>

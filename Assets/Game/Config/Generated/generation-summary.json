@@ -1,20 +1,14 @@
 {
-    "generatedAtUtc": "2026-04-24T08:58:10.0189191Z",
+    "generatedAtUtc": "2026-04-29T01:39:10.4340815Z",
     "pipelineVersion": "3",
     "validationSuccess": true,
     "validationErrorCount": 0,
     "tables": [
         {
-            "sheetName": "Attr",
-            "sourceFileName": "Attr.csv",
+            "sheetName": "DemoAllTypes",
+            "sourceFileName": "DemoAllTypes.csv",
             "sourceKind": "csv",
-            "dataRowCount": 2
-        },
-        {
-            "sheetName": "Buff",
-            "sourceFileName": "Buff.csv",
-            "sourceKind": "csv",
-            "dataRowCount": 2
+            "dataRowCount": 1
         }
     ]
 }

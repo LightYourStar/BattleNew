@@ -1,7 +1,9 @@
 #if UNITY_EDITOR
 using System.Collections.Generic;
+using System.Linq;
 using Game.Config.Contracts;
 using Game.Config.Editor.Excel;
+using Game.Config.Editor.Manifest;
 using Game.Config.Editor.Validation;
 
 namespace Game.Config.Editor.Generator
@@ -23,11 +25,26 @@ namespace Game.Config.Editor.Generator
             new TypeValidator(),
         };
 
-        /// <summary>执行完整流程；校验失败时仍写出 JSON 摘要（success=false）便于 CI 归档。</summary>
-        public ExcelValidationReport Run()
+        public sealed class RunResult
         {
-            var batch = _parser.BuildDefaultBatch();
+            public ExcelValidationReport Report;
+            public List<string> ProcessedTables = new List<string>();
+            public List<string> MissingTables = new List<string>();
+            public long ElapsedMilliseconds;
+            public bool ValidateOnly;
+        }
+
+        /// <summary>执行完整流程；校验失败时仍写出 JSON 摘要（success=false）便于 CI 归档。</summary>
+        public RunResult RunForTables(IReadOnlyList<string> tableNames, ConfigManifest manifest = null, bool validateOnly = false)
+        {
+            var started = System.DateTime.UtcNow;
+            var batch = _parser.BuildBatch(tableNames, manifest);
             var report = new ExcelValidationReport();
+            var processed = batch.Tables.Select(t => t.SheetName).ToList();
+            var missing = (tableNames ?? new List<string>())
+                .Where(t => !processed.Any(p => string.Equals(p, t, System.StringComparison.OrdinalIgnoreCase)))
+                .Distinct(System.StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
             foreach (var table in batch.Tables)
             {
@@ -53,11 +70,30 @@ namespace Game.Config.Editor.Generator
 
             if (!report.IsValid)
             {
-                return report;
+                return new RunResult
+                {
+                    Report = report,
+                    ProcessedTables = processed,
+                    MissingTables = missing,
+                    ElapsedMilliseconds = (long)(System.DateTime.UtcNow - started).TotalMilliseconds,
+                    ValidateOnly = validateOnly
+                };
             }
 
-            _assetGenerator.GenerateAttrAsset();
-            return report;
+            if (!validateOnly)
+            {
+                _codeGenerator.GenerateTableClasses(batch);
+                _assetGenerator.GenerateAssetsForBatch(batch);
+            }
+
+            return new RunResult
+            {
+                Report = report,
+                ProcessedTables = processed,
+                MissingTables = missing,
+                ElapsedMilliseconds = (long)(System.DateTime.UtcNow - started).TotalMilliseconds,
+                ValidateOnly = validateOnly
+            };
         }
 
         private static ConfigGenerationSummary BuildSummary(ConfigValidationBatch batch, ExcelValidationReport report)

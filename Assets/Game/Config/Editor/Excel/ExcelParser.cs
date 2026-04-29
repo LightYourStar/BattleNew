@@ -1,8 +1,10 @@
 #if UNITY_EDITOR
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Game.Config.Contracts;
+using Game.Config.Editor.Manifest;
 using UnityEngine;
 
 namespace Game.Config.Editor.Excel
@@ -14,24 +16,104 @@ namespace Game.Config.Editor.Excel
     {
         private const string SamplesRelative = "Game/Config/Editor/Excel/Samples";
 
-        /// <summary>构建默认校验批次（Attr + 可选 Buff）。</summary>
-        public ConfigValidationBatch BuildDefaultBatch()
+        /// <summary>
+        /// 按给定表名清单构建批次；表不存在时仅对 Attr 回退 mock，其他表跳过。
+        /// </summary>
+        public ConfigValidationBatch BuildBatch(IReadOnlyList<string> tableNames, ConfigManifest manifest = null)
         {
             var batch = new ConfigValidationBatch();
             var baseDir = Path.Combine(Application.dataPath, SamplesRelative);
-            var attr = TryReadTable(baseDir, "Attr");
-            batch.Tables.Add(attr ?? ParseMockAttr());
-
-            var buff = TryReadTable(baseDir, "Buff");
-            if (buff != null)
+            if (tableNames == null || tableNames.Count == 0)
             {
-                batch.Tables.Add(buff);
+                return batch;
+            }
+
+            foreach (var tableName in tableNames)
+            {
+                if (string.IsNullOrWhiteSpace(tableName))
+                {
+                    continue;
+                }
+
+                var parsed = TryReadTable(baseDir, tableName.Trim(), BuildReadOptions(manifest, tableName.Trim()));
+                if (parsed != null)
+                {
+                    batch.Tables.Add(parsed);
+                    continue;
+                }
+
+                if (string.Equals(tableName, "Attr", StringComparison.OrdinalIgnoreCase))
+                {
+                    batch.Tables.Add(ParseMockAttr());
+                }
             }
 
             return batch;
         }
 
-        private static ConfigValidationInput TryReadTable(string baseDir, string tableName)
+        /// <summary>扫描 Samples 目录可发现的逻辑表（xlsx sheet + csv 文件名）。</summary>
+        public IReadOnlyList<string> DiscoverAvailableTables()
+        {
+            var baseDir = Path.Combine(Application.dataPath, SamplesRelative);
+            var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (!Directory.Exists(baseDir))
+            {
+                return result.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList();
+            }
+
+            foreach (var xlsxPath in Directory.GetFiles(baseDir, "*.xlsx"))
+            {
+                foreach (var sheet in XlsxTableReader.GetSheetNames(xlsxPath))
+                {
+                    if (!string.IsNullOrWhiteSpace(sheet))
+                    {
+                        result.Add(sheet.Trim());
+                    }
+                }
+            }
+
+            foreach (var csvPath in Directory.GetFiles(baseDir, "*.csv"))
+            {
+                var table = Path.GetFileNameWithoutExtension(csvPath);
+                if (!string.IsNullOrWhiteSpace(table))
+                {
+                    result.Add(table.Trim());
+                }
+            }
+
+            return result.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList();
+        }
+
+        /// <summary>返回表的可用来源：xlsx/csv/mock/missing（仅用于编辑器展示）。</summary>
+        public string ResolveTableSourceKind(string tableName)
+        {
+            var baseDir = Path.Combine(Application.dataPath, SamplesRelative);
+            if (Directory.Exists(baseDir))
+            {
+                foreach (var xlsxPath in Directory.GetFiles(baseDir, "*.xlsx").OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
+                {
+                    if (XlsxTableReader.TryReadExactSheet(xlsxPath, Path.GetFileName(xlsxPath), tableName, out _))
+                    {
+                        return "xlsx";
+                    }
+                }
+            }
+
+            var csvPath = Path.Combine(baseDir, tableName + ".csv");
+            if (File.Exists(csvPath))
+            {
+                return "csv";
+            }
+
+            if (string.Equals(tableName, "Attr", StringComparison.OrdinalIgnoreCase))
+            {
+                return "mock";
+            }
+
+            return "missing";
+        }
+
+        private static ConfigValidationInput TryReadTable(string baseDir, string tableName, ExcelReadOptions options)
         {
             if (Directory.Exists(baseDir))
             {
@@ -40,6 +122,10 @@ namespace Game.Config.Editor.Excel
                 {
                     if (XlsxTableReader.TryReadExactSheet(xlsxPath, Path.GetFileName(xlsxPath), tableName, out var parsed))
                     {
+                        if (options != null)
+                        {
+                            parsed = XlsxTableReader.Read(xlsxPath, Path.GetFileName(xlsxPath), tableName, options);
+                        }
                         return parsed;
                     }
                 }
@@ -48,10 +134,38 @@ namespace Game.Config.Editor.Excel
             var csvPath = Path.Combine(baseDir, tableName + ".csv");
             if (File.Exists(csvPath))
             {
-                return CsvTableReader.Read(csvPath, tableName + ".csv", tableName);
+                return CsvTableReader.Read(csvPath, tableName + ".csv", tableName, options);
             }
 
             return null;
+        }
+
+        private static ExcelReadOptions BuildReadOptions(ConfigManifest manifest, string tableName)
+        {
+            if (manifest == null)
+            {
+                return new ExcelReadOptions();
+            }
+
+            var entry = manifest.Tables.FirstOrDefault(t => string.Equals(t.TableName, tableName, StringComparison.OrdinalIgnoreCase));
+            if (entry != null && entry.UseCustomLayout)
+            {
+                return new ExcelReadOptions
+                {
+                    HeaderRowIndex = entry.HeaderRowIndex,
+                    TypeRowIndex = entry.TypeRowIndex,
+                    DataStartRowIndex = entry.DataStartRowIndex,
+                    AutoDetectTypeRowWhenEmpty = entry.AutoDetectTypeRowWhenEmpty
+                };
+            }
+
+            return new ExcelReadOptions
+            {
+                HeaderRowIndex = manifest.GlobalHeaderRowIndex,
+                TypeRowIndex = manifest.GlobalTypeRowIndex,
+                DataStartRowIndex = manifest.GlobalDataStartRowIndex,
+                AutoDetectTypeRowWhenEmpty = manifest.GlobalAutoDetectTypeRowWhenEmpty
+            };
         }
 
         /// <summary>内存 mock，与 Attr 表示例列一致。</summary>

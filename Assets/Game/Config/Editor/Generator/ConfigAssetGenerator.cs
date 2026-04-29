@@ -1,6 +1,10 @@
 #if UNITY_EDITOR
+using System;
+using System.IO;
+using Game.Config.Contracts;
 using Game.Config.Generated;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 
@@ -49,9 +53,90 @@ namespace Game.Config.Editor.Generator
                 new AttrConfigItem { Id = 2, Name = "Health", Value = 100 }
             });
             AssetDatabase.CreateAsset(asset, $"{DataPath}/AttrConfigTable.asset");
-            AssetDatabase.CreateAsset(Object.Instantiate(asset), $"{ResourcesPath}/AttrConfigTable.asset");
+            AssetDatabase.CreateAsset(UnityEngine.Object.Instantiate(asset), $"{ResourcesPath}/AttrConfigTable.asset");
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
+        }
+
+        /// <summary>
+        /// 为批次内每张表导出通用 .asset（Data + Resources），保证 Generate 时总有可见资产产物。
+        /// </summary>
+        public void GenerateAssetsForBatch(ConfigValidationBatch batch)
+        {
+            if (batch == null)
+            {
+                return;
+            }
+
+            EnsureFolders();
+            foreach (var table in batch.Tables)
+            {
+                if (table == null || string.IsNullOrWhiteSpace(table.SheetName))
+                {
+                    continue;
+                }
+
+                var fileName = $"{table.SheetName}ConfigRaw.asset";
+                var dataPath = $"{DataPath}/{fileName}";
+                var resPath = $"{ResourcesPath}/{fileName}";
+
+                var source = BuildGenericAssetData(table);
+                UpsertAsset(dataPath, source);
+                UpsertAsset(resPath, source);
+                UnityEngine.Object.DestroyImmediate(source);
+            }
+
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+        }
+
+        private static GenericConfigTableAsset BuildGenericAssetData(ConfigValidationInput table)
+        {
+            var asset = ScriptableObject.CreateInstance<GenericConfigTableAsset>();
+            var rows = table.Rows
+                .Select(r =>
+                {
+                    var rr = new GenericConfigRow();
+                    foreach (var c in table.Columns)
+                    {
+                        rr.Cells.Add(r.TryGetValue(c, out var v) ? v : string.Empty);
+                    }
+
+                    return rr;
+                })
+                .ToList();
+
+            var types = table.ColumnTypeTokens.Count == table.Columns.Count
+                ? new List<string>(table.ColumnTypeTokens)
+                : new List<string>(Enumerable.Repeat(string.Empty, table.Columns.Count));
+
+            asset.ResetFrom(
+                table.SheetName,
+                new List<string>(table.Columns),
+                types,
+                rows);
+            return asset;
+        }
+
+        private static void UpsertAsset(string path, GenericConfigTableAsset source)
+        {
+            var existing = AssetDatabase.LoadAssetAtPath<GenericConfigTableAsset>(path);
+            if (existing == null)
+            {
+                var any = AssetDatabase.LoadMainAssetAtPath(path);
+                if (any != null)
+                {
+                    AssetDatabase.DeleteAsset(path);
+                }
+
+                var created = UnityEngine.Object.Instantiate(source);
+                created.name = Path.GetFileNameWithoutExtension(path);
+                AssetDatabase.CreateAsset(created, path);
+                return;
+            }
+
+            EditorUtility.CopySerialized(source, existing);
+            EditorUtility.SetDirty(existing);
         }
     }
 }
