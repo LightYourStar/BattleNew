@@ -44,7 +44,8 @@
     "com.unity.modules.wind": "1.0.0",
     "com.unity.modules.xr": "1.0.0",
     "com.ivanmurzak.unity.mcp.particlesystem": "1.0.56",
-    "com.ivanmurzak.unity.mcp.animation": "1.1.29"
+    "com.ivanmurzak.unity.mcp.animation": "1.1.29",
+    "com.ivanmurzak.unity.mcp.probuilder": "1.0.68"
   },
   "scopedRegistries": [
     {
