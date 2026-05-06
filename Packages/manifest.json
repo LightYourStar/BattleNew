@@ -1,6 +1,9 @@
 {
   "dependencies": {
-    "com.ivanmurzak.unity.mcp": "0.67.2",
+    "com.ivanmurzak.unity.mcp": "0.69.0",
+    "com.ivanmurzak.unity.mcp.animation": "1.1.29",
+    "com.ivanmurzak.unity.mcp.particlesystem": "1.0.56",
+    "com.ivanmurzak.unity.mcp.probuilder": "1.0.68",
     "com.unity.2d.sprite": "1.0.0",
     "com.unity.collab-proxy": "2.7.1",
     "com.unity.ide.rider": "3.0.36",
@@ -42,10 +45,7 @@
     "com.unity.modules.video": "1.0.0",
     "com.unity.modules.vr": "1.0.0",
     "com.unity.modules.wind": "1.0.0",
-    "com.unity.modules.xr": "1.0.0",
-    "com.ivanmurzak.unity.mcp.particlesystem": "1.0.56",
-    "com.ivanmurzak.unity.mcp.animation": "1.1.29",
-    "com.ivanmurzak.unity.mcp.probuilder": "1.0.68"
+    "com.unity.modules.xr": "1.0.0"
   },
   "scopedRegistries": [
     {
